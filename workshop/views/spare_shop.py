@@ -820,9 +820,39 @@ def _clean_spare_dates(raw_ordered, raw_received, blank_is_today):
     return ordered, received, None
 
 
+def _clean_transport(raw):
+    """
+    A typed transport → `(Decimal or None, error_message)`.
+
+    Blank is NONE — no transport — and `PRICE_NOT_SUPPLIED` is the same (Floor
+    is shown no cost, so its posts carry none). Otherwise the same bounds as the
+    shop price beside it, and for the same reasons: refused rather than clamped
+    when negative, refused past the column rather than written and left to break
+    the aggregates that read it.
+    """
+    if raw is PRICE_NOT_SUPPLIED or not str(raw or '').strip():
+        return None, None
+    try:
+        value = Decimal(str(raw).strip())
+    except (InvalidOperation, ValueError, TypeError):
+        return None, "Transport must be a number."
+    if not value.is_finite():
+        return None, "Transport must be a number."
+    if value < 0:
+        return None, "Transport cannot be negative."
+    if value > MAX_UNIT_PRICE:
+        return None, f"Transport is too large (limit ₹{MAX_UNIT_PRICE:,})."
+    return value.quantize(Decimal('0.01')), None
+
+
+#: Said wherever a transport arrives with no Received date to file its cash by.
+TRANSPORT_NEEDS_RECEIVED = ("Transport is paid when the part arrives — enter the "
+                            "Received date, so Cash Tracking files it on that day.")
+
+
 def _build_unassigned_spare(shop, name, raw_price, raw_qty,
                             ordered_date=None, received_date=None,
-                            vehicle_info=None):
+                            vehicle_info=None, raw_transport=PRICE_NOT_SUPPLIED):
     """
     Validate and create one unassigned spare on a shop's ledger.
 
@@ -847,6 +877,12 @@ def _build_unassigned_spare(shop, name, raw_price, raw_qty,
     TRIMMED to the column rather than allowed to fail, the same rule the name
     follows and for the same reason: an oversized value is stored by SQLite and
     rejected by PostgreSQL, so the only consistent answer is to trim.
+
+    `raw_transport` is what it cost to bring the part in, paid to anyone but the
+    shop — never part of the shop's balance (see
+    `JobCardSpareItem.transport_cost`). It defaults to "not supplied" so a
+    caller that has no such box (the shop page's own add form, Floor) stores
+    none. It travels with the part onto a car via "Import from Unassigned".
     """
     if shop is None:
         return None, "Choose which shop this was bought from."
@@ -880,11 +916,19 @@ def _build_unassigned_spare(shop, name, raw_price, raw_qty,
     if qty > MAX_QUANTITY:
         return None, f"Quantity is too large (limit {MAX_QUANTITY:,})."
 
+    transport, transport_error = _clean_transport(raw_transport)
+    if transport_error:
+        return None, transport_error
+
     ord_date, rec_date, date_error = _clean_spare_dates(
         ordered_date, received_date, blank_is_today=True
     )
     if date_error:
         return None, date_error
+    # A blank Received box becomes today on a create, so this only fires on a
+    # post that sent no date at all — but the rule is stated where it is kept.
+    if transport and rec_date is None:
+        return None, TRANSPORT_NEEDS_RECEIVED
 
     item = JobCardSpareItem.objects.create(
         job_card=None,
@@ -892,6 +936,7 @@ def _build_unassigned_spare(shop, name, raw_price, raw_qty,
         source=JobCardSpareItem.SOURCE_SHOP,
         spare_part_name=name,
         unit_price=None if price is None else price.quantize(Decimal('0.01')),
+        transport_cost=transport,
         quantity=qty.quantize(Decimal('0.01')),
         status='RECEIVED',
         ordered_date=ord_date,
@@ -1103,10 +1148,15 @@ def unassigned_spare_add(request):
     if raw_shop.isdigit():
         shop = SpareShop.objects.filter(pk=int(raw_shop), is_trashed=False).first()
 
+    # Transport is a cost, so it goes the same way as the price: read for Office
+    # and Owner, never read at all for Floor — a crafted post carrying one
+    # writes nothing.
     if is_office_or_owner(request.user):
         raw_price = request.POST.get('unit_price', '0')
+        raw_transport = request.POST.get('transport_cost', '')
     else:
         raw_price = PRICE_NOT_SUPPLIED
+        raw_transport = PRICE_NOT_SUPPLIED
 
     item, error = _build_unassigned_spare(
         shop,
@@ -1116,6 +1166,7 @@ def unassigned_spare_add(request):
         ordered_date=request.POST.get('ordered_date'),
         received_date=request.POST.get('received_date'),
         vehicle_info=request.POST.get('original_vehicle_info'),
+        raw_transport=raw_transport,
     )
     if error:
         messages.error(request, error)
@@ -1128,8 +1179,9 @@ def unassigned_spare_add(request):
 @transaction.atomic
 def unassigned_spare_edit(request, item_pk):
     """
-    POST: correct an UNASSIGNED spare — shop, name, quantity, price and the two
-    dates. Office and Owner only: this rewrites what a supplier is owed.
+    POST: correct an UNASSIGNED spare — shop, name, quantity, price, transport
+    and the two dates. Office and Owner only: this rewrites what a supplier is
+    owed.
 
     Every rule `_build_unassigned_spare` applies on create is applied again
     here, because an edit can reach exactly the same bad states a create can and
@@ -1201,10 +1253,27 @@ def unassigned_spare_edit(request, item_pk):
     if date_error:
         return refuse(date_error)
 
+    # A post with NO transport key is an edit form that never had the box (a
+    # page opened before it existed): the row keeps what it has, rather than
+    # the old page silently clearing a cash payment. An EMPTY box is somebody
+    # clearing it, and that is allowed to stick.
+    if 'transport_cost' in request.POST:
+        transport, transport_error = _clean_transport(request.POST.get('transport_cost'))
+        if transport_error:
+            return refuse(transport_error)
+    else:
+        transport = item.transport_cost
+    # Clearing the Received date here is a deliberate act, and it would leave
+    # the transport's cash with no day to be filed under in Cash Tracking. A ₹0
+    # transport is no transport, so it has no cash to file and is not asked.
+    if transport and rec_date is None:
+        return refuse(TRANSPORT_NEEDS_RECEIVED)
+
     previous_shop = item.shop
     item.shop = shop
     item.spare_part_name = name
     item.unit_price = None if price is None else price.quantize(Decimal('0.01'))
+    item.transport_cost = transport
     item.quantity = qty.quantize(Decimal('0.01'))
     item.ordered_date = ord_date
     item.received_date = rec_date

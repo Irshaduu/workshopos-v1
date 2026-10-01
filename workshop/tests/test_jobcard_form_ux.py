@@ -348,17 +348,18 @@ class TheSpareRowKeepsEveryFieldItPostsTests(JobCardFormBase):
     def test_the_columns_are_in_the_order_the_owner_asked_for(self):
         thead = self.spare_table()['thead']
         wanted = ['Part Name', 'Qty', 'Status', 'Shop', 'Dates',
-                  'Shop Price', 'Customer Price']
+                  'Shop Price', 'Transport', 'Customer Price']
         positions = [thead.find(w) for w in wanted]
         self.assertNotIn(-1, positions, 'a spare column heading went missing')
         self.assertEqual(positions, sorted(positions),
                          'Spare Parts columns are no longer Part Name · Qty · '
-                         'Status · Shop · Dates · Shop Price · Customer Price')
+                         'Status · Shop · Dates · Shop Price · Transport · Customer Price')
 
     def test_every_posting_field_still_renders(self):
         html = self.rendered()
         for field in ('spare_part_name', 'quantity', 'shop_name', 'status',
-                      'unit_price', 'total_price', 'ordered_date', 'received_date'):
+                      'unit_price', 'transport_cost', 'total_price',
+                      'ordered_date', 'received_date'):
             self.assertIn('spares-0-%s' % field, html,
                           '%s stopped rendering — it will save as blank' % field)
 
@@ -1637,6 +1638,10 @@ class BothPriceBoxesAreLineTotalsTests(JobCardFormBase):
     Nothing in this suite executes the script that shows them, so these pin what
     the SERVER owes it: a mark in each price cell, on every row including the
     one "+ Add Spare" clones, and nothing on either that could post a figure.
+
+    THREE MARKS SINCE 2026-10-01: the Transport box between the two prices is a
+    line figure too — what it cost to bring the whole line in — so it takes the
+    same mark under the same condition, and the row still says one thing.
     """
 
     def setUp(self):
@@ -1654,8 +1659,9 @@ class BothPriceBoxesAreLineTotalsTests(JobCardFormBase):
             at = chunk.find('class="jc-total"', at + 1)
         return out
 
-    def test_both_price_boxes_carry_a_mark(self):
-        self.assertEqual(len(self.marks(self.spare_table()['tbody'])), 2)
+    def test_every_money_box_carries_a_mark(self):
+        # Shop Price, Transport and Customer Price.
+        self.assertEqual(len(self.marks(self.spare_table()['tbody'])), 3)
 
     def test_the_added_row_template_carries_both(self):
         """
@@ -1666,32 +1672,37 @@ class BothPriceBoxesAreLineTotalsTests(JobCardFormBase):
         """
         template = self.rendered().split(
             'id="empty-spare-form"', 1)[1].split('</tbody>', 1)[0]
-        self.assertEqual(len(self.marks(template)), 2)
+        self.assertEqual(len(self.marks(template)), 3)
 
     def test_one_mark_sits_with_each_price(self):
         """
-        Shop Price then its mark, Customer Price then its mark. Both boxes mean
-        the same thing now, so both must say it — a row that marked one and not
-        the other would read as though only one were a total.
+        Shop Price then its mark, Transport then its mark, Customer Price then
+        its mark. All three boxes mean the same thing — a line total — so all
+        three must say it: a row that marked one and not another would read as
+        though only some were totals.
         """
         tbody = self.spare_table()['tbody']
         first = tbody.index('class="jc-total"')
         second = tbody.index('class="jc-total"', first + 1)
+        third = tbody.index('class="jc-total"', second + 1)
         positions = [
             tbody.index('name="spares-0-unit_price"'),
             first,
-            tbody.index('name="spares-0-total_price"'),
+            tbody.index('name="spares-0-transport_cost"'),
             second,
+            tbody.index('name="spares-0-total_price"'),
+            third,
         ]
         self.assertEqual(positions, sorted(positions))
 
     def test_the_word_is_total_on_both(self):
         """
         Fixed in the markup rather than written by the script: it never varies,
-        and the script decides only whether it shows.
+        and the script decides only whether it shows. (Three boxes since the
+        Transport box joined the two prices.)
         """
         tbody = self.spare_table()['tbody']
-        self.assertEqual(tbody.count('>total</span>'), 2)
+        self.assertEqual(tbody.count('>total</span>'), 3)
 
     def test_neither_can_post_a_figure(self):
         """

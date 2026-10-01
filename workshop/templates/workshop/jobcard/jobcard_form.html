@@ -166,7 +166,11 @@
 
        Shown only when the row holds more than one of something. On a row of one
        "total" is true of every box on the page and would say nothing, so both
-       stay clean — which is the common case. */
+       stay clean — which is the common case.
+
+       The Transport box between them (2026-10-01) is a line figure too — what
+       it cost to bring the whole line in — so it takes the same mark under the
+       same condition. */
     .jc-total-wrap { position: relative; }
     .jc-total {
         position: absolute;
@@ -2257,12 +2261,17 @@ grey".
                             {% comment %}
                             Column order, on the owner's instruction: Part Name ·
                             ⋮ · Qty · Status · Shop · Dates · Shop Price ·
-                            Customer Price. It follows the order the row is
+                            Transport · Customer Price. It follows the order the row is
                             actually filled in — what the part is, how many, where
                             it has got to, who it came from — with the money last,
                             where Office picks the row up afterwards. The Shop
                             moved up from between the dates and the prices; the
                             two date columns collapsed into one.
+
+                            Transport sits BETWEEN the two prices (2026-10-01): the
+                            money reads left to right as what we paid the shop,
+                            what else we paid to bring it in, and what we charge —
+                            the order the suggested price is worked out in.
 
                             Nothing here is load-bearing for behaviour, and that
                             is worth knowing before moving it again: every script
@@ -2314,6 +2323,7 @@ grey".
                                     <th class="{% if not request.user|has_group:'Office' and not request.user|has_group:'Owner' and not request.user.is_superuser %}pe-4{% endif %}" style="min-width: 138px;">Dates</th>
                                     {% if request.user|has_group:"Office" or request.user|has_group:"Owner" or request.user.is_superuser %}
                                     <th class="col-price text-nowrap">Shop Price (₹)</th>
+                                    <th class="col-price text-nowrap">Transport (₹)</th>
                                     <th class="col-price col-price-mk pe-4 text-nowrap">Customer Price (₹)</th>
                                     {% endif %}
                                 </tr>
@@ -2454,6 +2464,20 @@ grey".
                                             <span class="jc-total" hidden>total</span>
                                         </div>
                                     </td>
+                                    {% comment %}
+                                    Transport — paid to bring the part in, to anyone
+                                    but the shop. Never on the bill and never on the
+                                    shop's ledger; it goes into the suggested
+                                    customer price at cost (rule B). A line figure,
+                                    so it carries the same "total" mark as the two
+                                    prices either side of it.
+                                    {% endcomment %}
+                                    <td class="col-price">
+                                        <div class="jc-total-wrap">
+                                            {{ s_form.transport_cost }}
+                                            <span class="jc-total" hidden>total</span>
+                                        </div>
+                                    </td>
                                     <td class="col-price col-price-mk pe-4">
                                         {# The markup badge sits after the box — see `.jc-mk`. #}
                                         <div class="jc-mk-wrap">
@@ -2473,6 +2497,7 @@ grey".
                                             {% endfor %}
                                         </select>
                                         {{ s_form.unit_price }}
+                                        {{ s_form.transport_cost }}
                                         {{ s_form.total_price }}
                                     </td>
                                     {% endif %}
@@ -2704,6 +2729,12 @@ is now true, and the column width is unchanged at every breakpoint.
                         <span class="jc-total" hidden>total</span>
                     </div>
                 </td>
+                <td class="col-price">
+                    <div class="jc-total-wrap">
+                        {{ spare_formset.empty_form.transport_cost }}
+                        <span class="jc-total" hidden>total</span>
+                    </div>
+                </td>
                 <td class="col-price col-price-mk pe-4">
                     <div class="jc-mk-wrap">
                         <div class="jc-total-wrap">
@@ -2719,6 +2750,7 @@ is now true, and the column width is unchanged at every breakpoint.
                         <option value="">-- Shop --</option>
                     </select>
                     {{ spare_formset.empty_form.unit_price }}
+                    {{ spare_formset.empty_form.transport_cost }}
                     {{ spare_formset.empty_form.total_price }}
                 </td>
                 {% endif %}
@@ -2746,9 +2778,23 @@ is now true, and the column width is unchanged at every breakpoint.
         // UTILITY: CLEAR ZERO VALUES
         // ==========================================
 
+        // ⚠ A PART'S MONEY BOXES ARE LEFT ALONE, and that is a data rule, not
+        // a display one (fixed 2026-10-01). On a part, ₹0 is a real figure — a
+        // part given away, a free warranty replacement — and it is a DIFFERENT
+        // fact from blank, which means nobody has priced it. This blanked a
+        // stored "0.00" on load like any other zero, the box then posted empty,
+        // and the save stored NULL: the free part turned into an unpriced one,
+        // counted as "no cost recorded" and chased by the settle dialog.
+        // Measured on the development data before the fix: a ₹0 customer price
+        // came back NULL after one ordinary save. Everywhere else a zero still
+        // means "nothing typed" (the labour charge on a new card), and blanking
+        // it there is what stops a first keystroke landing as "08500".
+        const PART_MONEY = /^(spares|inventory)-\d+-(unit_price|transport_cost|total_price|customer_rate)$/;
+
         function clearZeroInputs() {
             const inputs = document.querySelectorAll('input[type="number"], input[type="text"]');
             inputs.forEach(input => {
+                if (PART_MONEY.test(input.name || '')) return;
                 if (input.value === '0' || input.value === '0.00' || input.value === '0.0') {
                     input.value = '';
                 }
@@ -2963,7 +3009,7 @@ is now true, and the column width is unchanged at every breakpoint.
 
                     const filled = [
                         '-quantity', '-ordered_date', '-received_date',
-                        '-unit_price', '-total_price', '-customer_rate',
+                        '-unit_price', '-transport_cost', '-total_price', '-customer_rate',
                     ].some(function (suffix) {
                         const field = row.querySelector('[name$="' + suffix + '"]');
                         return field && field.value.trim();
@@ -3355,12 +3401,12 @@ is now true, and the column width is unchanged at every breakpoint.
                   </td>
                   <td>{{ spare.shop.name|default:"—" }}</td>
                   <td>{{ spare.quantity }}</td>
-                  <td>{% if spare.unit_price %}₹{{ spare.unit_price|floatformat:0 }}{% else %}—{% endif %}</td>
+                  <td>{% if spare.unit_price %}₹{{ spare.unit_price|floatformat:0 }}{% else %}—{% endif %}{% if spare.transport_cost %}<div class="text-muted" style="font-size: 0.75rem;">+ ₹{{ spare.transport_cost|floatformat:0 }} transport</div>{% endif %}</td>
                   <td><span class="small text-muted">{{ spare.ordered_date|date:"d/m/Y"|default:"—" }}</span></td>
                   <td><span class="small text-muted">{{ spare.received_date|date:"d/m/Y"|default:"—" }}</span></td>
                   <td class="text-end">
                     <button type="button" class="btn btn-sm btn-primary rounded-pill px-3 fw-bold"
-                            onclick="importSpare(this, '{{ spare.pk }}', '{{ spare.spare_part_name|escapejs }}', '{{ spare.quantity|default:1 }}', '{{ spare.unit_price|default:'' }}', '{{ spare.shop.name|escapejs }}', '{{ spare.ordered_date|date:"Y-m-d"|default:"" }}', '{{ spare.received_date|date:"Y-m-d"|default:"" }}')">
+                            onclick="importSpare(this, '{{ spare.pk }}', '{{ spare.spare_part_name|escapejs }}', '{{ spare.quantity|default:1 }}', '{{ spare.unit_price|default:'' }}', '{{ spare.shop.name|escapejs }}', '{{ spare.ordered_date|date:"Y-m-d"|default:"" }}', '{{ spare.received_date|date:"Y-m-d"|default:"" }}', '{{ spare.transport_cost|default:'' }}')">
                       Select
                     </button>
                   </td>
@@ -3383,7 +3429,7 @@ is now true, and the column width is unchanged at every breakpoint.
     new bootstrap.Modal(document.getElementById('importUnassignedModal')).show();
   }
 
-  function importSpare(btn, pk, name, qty, price, shopName, orderedDate, receivedDate) {
+  function importSpare(btn, pk, name, qty, price, shopName, orderedDate, receivedDate, transport) {
     if (!targetSpareRow) return;
 
     const nameInput = targetSpareRow.querySelector('input[name$="-spare_part_name"]');
@@ -3394,6 +3440,14 @@ is now true, and the column width is unchanged at every breakpoint.
 
     const priceInput = targetSpareRow.querySelector('input[name$="-unit_price"]');
     if (priceInput && price) priceInput.value = price;
+
+    // The transport typed when the part arrived travels with it. The imported
+    // row is saved and the Hub row deleted, so leaving this behind would drop
+    // a cash payment already made — and the Received date carried over below
+    // keeps Cash Tracking filing it on the day it was paid. Set BEFORE the
+    // price is suggested, because the suggestion adds it (rule B).
+    const transportInput = targetSpareRow.querySelector('input[name$="-transport_cost"]');
+    if (transportInput && transport) transportInput.value = transport;
     // An imported shop price suggests the customer price exactly as a typed one
     // does — it is filled by assigning `.value`, which fires no event, so the
     // price script has to be told. Absent for Floor, who has no price boxes.
@@ -3538,10 +3592,11 @@ and filled for the guard.
         var marks = row.querySelectorAll('.jc-total');
         for (var i = 0; i < marks.length; i++) marks[i].hidden = !show;
 
-        // Both money boxes, together — one condition, one appearance, so the
-        // row can never mark one figure and not the other.
+        // Every money box, together — one condition, one appearance, so the
+        // row can never mark one figure and not the others. Transport is a
+        // line figure too, so it takes the mark with the two prices.
         var boxes = row.querySelectorAll(
-            'input[name$="-unit_price"], input[name$="-total_price"]');
+            'input[name$="-unit_price"], input[name$="-transport_cost"], input[name$="-total_price"]');
         for (var j = 0; j < boxes.length; j++) {
             boxes[j].classList.toggle('jc-has-total', show);
         }
@@ -4246,14 +4301,15 @@ Save with it on screen. `workshop/pricing.py` records why.
 
 WHEN A BOX MAY BE FILLED — every rule, in one place:
 
-  1. Only in answer to a person: typing a Shop Price, picking a product,
-     importing an unassigned spare, or tapping into an empty customer price.
-     Opening a card fills nothing, so an old card cannot change by being looked
-     at.
+  1. Only in answer to a person: typing a Shop Price or a Transport, picking a
+     product, importing an unassigned spare, or tapping into an empty customer
+     price. Opening a card fills nothing, so an old card cannot change by being
+     looked at.
   2. Only a box that is EMPTY AS THE SERVER SENT IT, or one this script filled
      and nobody has touched since. "As the server sent it" is `defaultValue`,
-     not `value` — `clearZeroInputs()` blanks a stored ₹0 on load, and a part
-     given away free must never be priced because its box now looks empty.
+     not `value`, so nothing the page does to a box on load can make a stored
+     figure look fillable. (`clearZeroInputs()` used to blank a stored ₹0 on a
+     part, and still blanks zeros elsewhere — see it for why parts are exempt.)
   3. Once a person types in a customer price (emptying it counts), this script
      never writes there again on this page. What a person did always wins — the
      known-plate script's own rule.
@@ -4264,9 +4320,18 @@ WHEN A BOX MAY BE FILLED — every rule, in one place:
      real markup.
   6. No usable cost (blank, "1,000", a zero warehouse cost that means UNKNOWN)
      means no suggestion — and a suggestion this script made is taken back, so
-     a stale price cannot sit under a cost it no longer matches.
+     a stale price cannot sit under a cost it no longer matches. On a spare, a
+     ₹0 Shop Price is a free part (a warranty replacement, a gift): no
+     suggestion either, never just the transport.
+
+A SPARE'S TRANSPORT (2026-10-01, rule B — the owners' choice): the suggestion
+is shop price × the markup, PLUS the transport at cost, the whole rounded up to
+the rupee. The badge measures the markup on the PART, transport taken back out,
+so a price that no longer covers the transport turns red. Empty Transport is
+zero; a typed one that cannot be read stops the suggestion rather than being
+quietly ignored. All three sums are `pricing-core.js`.
 {% endcomment %}
-<script src="{% static 'js/pricing-core.js' %}?v=2"></script>
+<script src="{% static 'js/pricing-core.js' %}?v=3"></script>
 {% if pricing %}
 {{ pricing|json_script:"jcPricing" }}
 <script>
@@ -4340,28 +4405,37 @@ WHEN A BOX MAY BE FILLED — every rule, in one place:
     }
 
     // ---------------------------------------------------------------- spares
-    // Shop Price and Customer Price are both LINE totals, so the quantity plays
-    // no part here.
+    // Shop Price, Transport and Customer Price are all LINE totals, so the
+    // quantity plays no part here.
     function spareBoxes(row) {
         return {
             cost: row.querySelector('input[name^="spares-"][name$="-unit_price"]'),
+            transport: row.querySelector('input[name^="spares-"][name$="-transport_cost"]'),
             price: row.querySelector('input[name^="spares-"][name$="-total_price"]'),
             badge: row.querySelector('.jc-mk')
         };
     }
 
+    // Empty is zero; typed-but-unreadable is null, which stops both the
+    // suggestion and the badge rather than being read as no transport.
+    function spareTransport(b) {
+        return core.parseTransport(b.transport ? b.transport.value : '');
+    }
+
     function spareBadge(row) {
         var b = spareBoxes(row);
         if (!b.cost || !b.price) return;
-        paint(b.badge, core.markupPercent(core.parseMoney(b.price.value),
-                                          core.parseMoney(b.cost.value)));
+        paint(b.badge, core.spareMarkupPercent(core.parseMoney(b.price.value),
+                                               core.parseMoney(b.cost.value),
+                                               spareTransport(b)));
     }
 
     // Returns true when the customer price box changed.
     function fillSpare(row) {
         var b = spareBoxes(row);
         if (!b.cost || !b.price || !fillAllowed() || !mayWrite(b.price)) return false;
-        var paise = core.suggestPaise(core.parseMoney(b.cost.value), SPARE_MARKUP);
+        var paise = core.suggestSparePaise(core.parseMoney(b.cost.value),
+                                           spareTransport(b), SPARE_MARKUP);
         if (paise === null) return takeBack(b.price);
         var text = core.inputValue(paise);
         if (b.price.value === text) { wrote.set(b.price, text); return false; }
@@ -4486,7 +4560,9 @@ WHEN A BOX MAY BE FILLED — every rule, in one place:
     // re-initialise. Listeners on the boxes themselves (script.js) run first, in
     // the target phase: by the time these run, a typed total has already
     // cleared the rate and a typed quantity has already moved the total.
-    var SPARE_COST = /^spares-\d+-unit_price$/;
+    // Shop Price and Transport are the two COSTS the suggestion is built from,
+    // so typing in either is "a person answering" (rule 1) exactly alike.
+    var SPARE_COST = /^spares-\d+-(unit_price|transport_cost)$/;
     var SPARE_PRICE = /^spares-\d+-total_price$/;
     var INV_RATE = /^inventory-\d+-customer_rate$/;
     var INV_TOTAL = /^inventory-\d+-total_price$/;

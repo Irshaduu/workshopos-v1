@@ -312,6 +312,14 @@ TWO LAYOUT RULES WORTH NOT REDISCOVERING.
     border-bottom: 1px solid var(--color-border, #e2e8f0);
     white-space: nowrap;
     text-align: left;
+    /* ⚠ LOAD-BEARING, not tidying (found 2026-10-01). The Actions heading is
+       a Bootstrap `visually-hidden` label, which is `position: absolute`;
+       with nothing positioned between it and the page it escaped this
+       table's sideways scroller at its static position and widened the WHOLE
+       page on a phone — measured at 375px: the page 712px wide. Positioning
+       the cell keeps the label inside the scroller: 375px. The trap CLAUDE.md
+       records for the job card's markup badge. */
+    position: relative;
   }
   .ua-table td {
     padding: 11px 14px;
@@ -552,6 +560,20 @@ and unreachable by the only delete there is — money nobody could see or remove
               <input type="number" name="unit_price" id="ua-price" class="form-control"
                      step="0.01" min="0" placeholder="Leave blank">
             </div>
+            {% comment %}
+            TRANSPORT — what it cost to bring this part in, paid to anyone but the
+            shop. Never on the shop's balance. Typed here, on the day the part
+            arrives, so Cash Tracking files that cash on the Received date beside
+            it; it then travels with the part onto a car ("Import from
+            Unassigned") and reaches profit when the part is fitted, like the
+            part's own cost. Office and Owner only — the view never reads it for
+            Floor, whatever is posted.
+            {% endcomment %}
+            <div class="ua-field ua-f-price">
+              <label for="ua-transport">Transport (₹)</label>
+              <input type="number" name="transport_cost" id="ua-transport" class="form-control"
+                     step="0.01" min="0" placeholder="None">
+            </div>
             {% endif %}
 
             <div class="ua-field ua-f-date">
@@ -651,6 +673,10 @@ and unreachable by the only delete there is — money nobody could see or remove
                 {# NULL means nobody has priced it yet — not that it was free. #}
                 <span class="ua-none" title="Not priced yet">Not priced</span>
               {% endif %}
+              {# Under the price rather than a column of its own: most parts have none, and a column of dashes is clutter. #}
+              {% if item.transport_cost %}
+                <div class="ua-none" style="font-size: 0.74rem;">+ ₹{{ item.transport_cost|floatformat:0 }} transport</div>
+              {% endif %}
             </td>
             {% endif %}
             <td>
@@ -675,6 +701,7 @@ and unreachable by the only delete there is — money nobody could see or remove
                         data-name="{{ item.spare_part_name|default:'' }}"
                         data-qty="{{ item.quantity|default_if_none:'' }}"
                         data-price="{{ item.unit_price|default_if_none:'' }}"
+                        data-transport="{{ item.transport_cost|default_if_none:'' }}"
                         data-ordered="{{ item.ordered_date|date:'Y-m-d'|default:'' }}"
                         data-received="{{ item.received_date|date:'Y-m-d'|default:'' }}"
                         data-ordered-for="{{ item.original_vehicle_info|default:'' }}">
@@ -743,15 +770,20 @@ the document as many times as there are rows.
                    autocomplete="off" placeholder="e.g. BMW 320d">
           </div>
           <div class="row g-2 mb-3">
-            <div class="col-6">
+            <div class="col-4">
               <label class="form-label small fw-bold text-muted mb-1" for="ua-e-qty">Quantity</label>
               <input type="number" name="quantity" id="ua-e-qty" class="form-control form-control-sm"
                      step="0.01" min="0.01" required>
             </div>
-            <div class="col-6">
+            <div class="col-4">
               <label class="form-label small fw-bold text-muted mb-1" for="ua-e-price">Shop Price (₹)</label>
               <input type="number" name="unit_price" id="ua-e-price" class="form-control form-control-sm"
                      step="0.01" min="0" placeholder="Not priced">
+            </div>
+            <div class="col-4">
+              <label class="form-label small fw-bold text-muted mb-1" for="ua-e-transport">Transport (₹)</label>
+              <input type="number" name="transport_cost" id="ua-e-transport" class="form-control form-control-sm"
+                     step="0.01" min="0" placeholder="None">
             </div>
           </div>
           <div class="row g-2">
@@ -993,6 +1025,7 @@ the document as many times as there are rows.
         document.getElementById('ua-e-name').value = d.name || '';
         document.getElementById('ua-e-qty').value = d.qty || '1';
         document.getElementById('ua-e-price').value = d.price || '';
+        document.getElementById('ua-e-transport').value = d.transport || '';
         document.getElementById('ua-e-ordered').value = d.ordered || '';
         document.getElementById('ua-e-received').value = d.received || '';
         document.getElementById('ua-e-for').value = d.orderedFor || '';

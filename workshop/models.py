@@ -1481,6 +1481,22 @@ class JobCardSpareItem(models.Model):
     # can never quietly disagree. Staff usually skip it and type the total.
     customer_rate = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True, help_text="Customer price per unit (optional; drives total_price when set)")
 
+    # What it cost to GET this part to the workshop, paid to anyone but the shop
+    # — a bus parcel, a courier, an auto, our own boy's fuel (2026-10-01, the
+    # owners' request). A LINE figure like the two prices beside it. SHOP rows
+    # only: a warehouse draw came off a shelf that was delivered on a Supplies
+    # Shop bill, so `save()` clears it on an INVENTORY row.
+    #
+    # ⚠ IT IS NEVER PART OF WHAT THE SHOP IS OWED. The owners' first plan was to
+    # add it into Shop Price (₹22,000 + ₹900 = ₹22,900), which would have put
+    # ₹900 on the shop's ledger that nobody owes the shop. The ledgers read
+    # `analysis_engine.SHOP_LINE_COST`, which never touches this column; the
+    # PROFIT readers add it through `analysis_engine.TRANSPORT_COST`. Blank and
+    # ₹0 mean the same thing — no transport.
+    transport_cost = models.DecimalField(
+        max_digits=10, decimal_places=2, blank=True, null=True,
+        help_text="Transport paid to bring this part in — never owed to the shop (SHOP rows only)")
+
     # Order tracking
     shop_name = models.CharField(max_length=100, blank=True, null=True, help_text="Shop where part was ordered (text copy for display)")
     shop = models.ForeignKey('SpareShop', on_delete=models.SET_NULL, null=True, blank=True, related_name='spare_items', help_text="Linked SpareShop profile")
@@ -1551,6 +1567,14 @@ class JobCardSpareItem(models.Model):
         # leaving a stale one.
         if self.customer_rate is not None and self.quantity is not None:
             self.total_price = (self.customer_rate * self.quantity).quantize(Decimal('0.01'))
+
+        # Transport belongs to a SHOP row only. A warehouse draw's delivery was
+        # paid on the Supplies Shop bill that put it on the shelf, so a figure
+        # here would be a cost with no route — and the engine counts transport
+        # on the shop side of `parts_trading`, which only holds if no draw ever
+        # carries one.
+        if self.source == self.SOURCE_INVENTORY:
+            self.transport_cost = None
 
         # Which shop this row was billed to BEFORE this save. Moving a spare from
         # one shop to another has to refresh both ledgers: only refreshing the new

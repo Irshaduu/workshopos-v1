@@ -112,6 +112,69 @@
     }
 
     /**
+     * A spare's Transport box → paise. EMPTY IS ZERO, because most parts have
+     * no transport and a blank box must not stop the suggestion. Anything that
+     * IS typed goes through `parseMoney`, so "1,000" is null — unreadable — and
+     * never quietly read as nothing: a transport the arithmetic cannot see is a
+     * cost the customer's price would miss.
+     */
+    function parseTransport(text) {
+        if (typeof text === 'string' && text.trim() === '') { return 0n; }
+        return parseMoney(text);
+    }
+
+    /**
+     * A SPARE PART's suggested price — rule B (the owners' choice, 2026-10-01):
+     * the markup is on the PART, and the transport is passed to the customer at
+     * cost, inside the one price the bill prints.
+     *
+     *     shop price × (100 + markup) / 100  +  transport, then up to the rupee
+     *
+     * Rounded UP as a WHOLE, never part by part: ₹1,000 at 40% with ₹45.50 of
+     * transport is ₹1,445.50, so ₹1,446. With no transport it is exactly
+     * `suggestPaise`. Null when the shop price is missing or zero (a free part
+     * is a warranty or a gift, and its price is a person's decision), the
+     * transport is unreadable, the markup is not a whole 0–999, or the result
+     * would not fit the column.
+     */
+    function suggestSparePaise(costPaise, transportPaise, markup) {
+        if (typeof costPaise !== 'bigint' || costPaise <= 0n) { return null; }
+        if (typeof transportPaise !== 'bigint' || transportPaise < 0n) { return null; }
+        var m = parseMarkup(markup);
+        if (m === null) { return null; }
+        var num = costPaise * BigInt(100 + m) + transportPaise * 100n;
+        var rupees = num / 10000n;
+        if (num % 10000n !== 0n) { rupees += 1n; }
+        var paise = rupees * 100n;
+        return paise <= MONEY_CEILING ? paise : null;
+    }
+
+    /**
+     * A SPARE PART's badge — the markup on the PART once its transport is
+     * taken back out of the price:
+     *
+     *     (price − transport − shop price) ÷ shop price, rounded DOWN
+     *
+     * So a price made by `suggestSparePaise` reads its own markup (₹1,900 on
+     * ₹1,000 + ₹500 is 40%), and a price that no longer covers the transport
+     * goes RED — ₹1,400 saved before ₹500 of transport was typed reads −10%,
+     * which is the silent loss this badge exists to show. Null when the shop
+     * price is missing or zero, the price is missing, or the transport is
+     * unreadable. With no transport it is exactly `markupPercent`.
+     */
+    function spareMarkupPercent(pricePaise, costPaise, transportPaise) {
+        if (typeof pricePaise !== 'bigint' || typeof costPaise !== 'bigint' ||
+            typeof transportPaise !== 'bigint' ||
+            costPaise <= 0n || pricePaise < 0n || transportPaise < 0n) {
+            return null;
+        }
+        var num = (pricePaise - transportPaise - costPaise) * 100n;
+        var q = num / costPaise;                          // truncates toward zero
+        if (num < 0n && num % costPaise !== 0n) { q -= 1n; }   // …so floor a negative
+        return Number(q);
+    }
+
+    /**
      * The markup a price carries over its cost, as a whole percent ROUNDED
      * DOWN — so the badge never claims more profit than there is, and a
      * "20%" badge is never really 19.8%. Both arguments are BigInts on the
@@ -240,8 +303,11 @@
         parseMoney: parseMoney,
         parseQty: parseQty,
         parseMarkup: parseMarkup,
+        parseTransport: parseTransport,
         suggestPaise: suggestPaise,
+        suggestSparePaise: suggestSparePaise,
         markupPercent: markupPercent,
+        spareMarkupPercent: spareMarkupPercent,
         lineMarkupPercent: lineMarkupPercent,
         lineTotalPaise: lineTotalPaise,
         unitFromTotalPaise: unitFromTotalPaise,

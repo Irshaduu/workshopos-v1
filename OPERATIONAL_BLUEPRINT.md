@@ -467,13 +467,27 @@ TRANSFER = Bank Transfer
 ```
 Shop Price      = What the parts shop BILLED for the line — a line total, copied
                   off the shop's own bill, never multiplied by the quantity
+Transport       = What it cost to BRING the part in, paid to anyone but the shop
+                  (bus parcel, courier, auto) — optional, a line total too
 Customer Price  = What the CUSTOMER pays for the line (with your markup)
-Margin per line = Customer Price - Shop Price
+Margin per line = Customer Price - Shop Price - Transport
 ```
 
 A shop row's quantity moves no money; it describes what was bought and still prints
 on the bill. A warehouse draw is the other way round: its cost is per unit — the
-shelf's average — times the quantity.
+shelf's average — times the quantity, and it carries no Transport (its delivery was
+on the Supplies Shop bill).
+
+**Transport is never added to Shop Price.** Shop Price is what the shop's own bill
+says; transport paid to somebody else is not owed to the shop, so it goes in its own
+box. It never prints on the customer's bill as a line — it is recovered inside the
+part's price — and on the Profit page it is its own expense line, **Parts
+transport**. In Cash Tracking it is money out on the day the part arrived. One parcel
+for several parts is split by whoever types it (600 over three parts as
+200/200/200, or 300/200/100) — the shares must add up to what was paid, because the
+boxes are the only record of it. Transport for a part that is not on any car yet is
+typed on its Unassigned Spares row and travels with it onto the car. Transport that
+has nothing to do with a part (an errand) is a Cashbook expense.
 
 ### Bulk/Fleet Payment (Cascade Algorithm)
 
@@ -557,7 +571,7 @@ A Job Card records parts in **two separate sections**:
 | | **Inventory Items** | **Spare Parts** |
 |---|---|---|
 | Where it came from | the workshop's own shelf | ordered from a spare shop for this job |
-| Columns | Item, Qty, Cost / Unit, Unit Price, Total Price | Part Name, Qty, Status, Ordered, Received, Shop, Shop Price, Customer Price |
+| Columns | Item, Qty, Cost / Unit, Unit Price, Total Price | Part Name, Qty, Status, Ordered, Received, Shop, Shop Price, Transport, Customer Price |
 | How the part is chosen | **picked** from stock (search, then select) | typed freely |
 | Moves warehouse stock? | **yes** | never |
 | Who supplied it | a Supplies Shop restock bill, earlier | the spare shop, per this job |
@@ -589,14 +603,18 @@ Office and Owner see a **suggested customer price** as they fill a row in:
 
 | | they type or pick | the page fills |
 |---|---|---|
-| **Spare Parts** | Shop Price ₹1,000 | Customer Price ₹1,400 — every spare at 40% |
+| **Spare Parts** | Shop Price ₹1,000 (and any Transport, say ₹500) | Customer Price ₹1,400 — every spare at 40% — plus the transport at cost: ₹1,900 |
 | **Inventory** | the product (its Cost / Unit shows, read-only) | Unit Price at that product's own markup, and the total from the quantity |
 
 The filled price is an ordinary box: change it and the change stands. A small round
 badge at the end of the row, after the total, says what markup the line really
 carries — **green** from 20%,
 **yellow** below 20%, **red** below cost. It is a **markup** (₹1,000 → ₹1,400 is 40%),
-which is why the Deep Analysis "Margin %" for the same part reads lower.
+which is why the Deep Analysis "Margin %" for the same part reads lower. On a spare
+part the badge measures the part with its transport taken back out, so ₹1,900 on
+₹1,000 + ₹500 reads 40% — and a price saved before the transport was typed turns
+**red** the moment it no longer covers it. A ₹0 Shop Price (a free warranty part)
+suggests nothing: what the customer pays for it is decided by a person.
 
 - A price is only suggested while someone is filling that row. Opening a card changes
   nothing; a part Floor recorded with no price is filled when Office taps its box.

@@ -70,8 +70,9 @@ def _resolvable_shops(spares):
     qs = SpareShop.objects.filter(Q(is_trashed=False) | Q(pk__in=linked_ids))
     return {shop.pk: shop for shop in qs}
 
-# Fields on a job-card part that only Office/Owner may set.
-PRICE_FIELDS = ('unit_price', 'total_price', 'customer_rate')
+# Fields on a job-card part that only Office/Owner may set. `transport_cost` is
+# a cost like the shop price beside it — Floor is shown neither.
+PRICE_FIELDS = ('unit_price', 'transport_cost', 'total_price', 'customer_rate')
 
 # Fields on the job CARD itself that only Office/Owner may set — who the customer
 # is, as opposed to what was done to the car. `labour_amount` belongs to the same
@@ -428,10 +429,15 @@ def _floor_locked_data(request, jobcard=None):
         for i in range(total):
             row = stored.get((data.get(f'{prefix}-{i}-id') or '').strip())
             for field in PRICE_FIELDS:
+                # Pinned whether or not the key was POSTED. It used to be pinned
+                # only `if key in data`, so a crafted payload that simply LEFT
+                # a price out was saved as blank by the formset — erasing what
+                # Office entered, the very failure the rendered-but-hidden
+                # inputs exist to prevent. Setting a key the route's form does
+                # not carry (a draw has no `unit_price` box) is ignored by it.
                 key = f'{prefix}-{i}-{field}'
-                if key in data:
-                    value = getattr(row, field, None) if row else None
-                    data[key] = '' if value is None else str(value)
+                value = getattr(row, field, None) if row else None
+                data[key] = '' if value is None else str(value)
 
     # The card's own labour charge. On a NEW card there is nothing stored yet, so
     # it is pinned at zero — a Floor user opening a job records what was done and
@@ -925,6 +931,14 @@ def _describe_spare(spare, is_draw, card_year=None):
 
     spare.meta_line = ' · '.join(meta)
     spare.cost_str = None if is_draw else rupees(spare.unit_price)
+    # Transport rides on the cost line, because it IS cost — what it took to
+    # bring the part in, paid to someone other than the shop. Beside a price of
+    # ₹1,900 a cost of "₹1,000" alone reads as 90% on the part; "₹1,000 +
+    # ₹500 transport" is the truth. Only when there is some, and a word rather
+    # than a caption: "+ ₹500 transport" is a figure that names itself, the way
+    # "× 2" does in the line above.
+    if not is_draw and spare.transport_cost:
+        spare.cost_str = f"{spare.cost_str or '—'} + {rupees(spare.transport_cost)} transport"
     spare.price_str = rupees(spare.total_price)
 
 

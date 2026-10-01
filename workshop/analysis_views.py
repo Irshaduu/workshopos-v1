@@ -54,7 +54,8 @@ from .models import (
     live_cards,
 )
 from . import analysis_engine as engine
-from .analysis_engine import MONEY, ZERO, SPARE_COST, live_jobcards, _sum
+from .analysis_engine import (MONEY, ZERO, SPARE_COST, TRANSPORT_COST, PART_COST,
+                              live_jobcards, _sum)
 
 
 # =============================================================================
@@ -329,12 +330,17 @@ def _insight_mechanics(start, end):
     # same queryset would fan the revenue Sum out across the spare join rows —
     # the classic Django multi-join inflation bug — and silently multiply
     # revenue by the number of spares on each card.
+    #
+    # `PART_COST`, not `SPARE_COST`: a gross profit is revenue less what the
+    # parts cost the WORKSHOP, and the transport paid to bring a part in is
+    # part of that (2026-10-01). The car profile's gross profit reads the same
+    # expression, so the two cannot disagree about one job.
     costs = {
         r['job_card__lead_mechanic']: r['c']
         for r in JobCardSpareItem.objects.filter(
             job_card__in=cards, job_card__lead_mechanic__isnull=False
         ).values('job_card__lead_mechanic')
-         .annotate(c=Coalesce(Sum(SPARE_COST, output_field=MONEY),
+         .annotate(c=Coalesce(Sum(PART_COST, output_field=MONEY),
                               Value(ZERO, output_field=MONEY), output_field=MONEY))
     }
 
@@ -422,14 +428,19 @@ def _insight_spare_parts(start, end):
     """
     base = _parts_base(start, end).filter(source=JobCardSpareItem.SOURCE_SHOP)
 
+    # The margin comes off AFTER transport, the rule `engine.parts_trading`
+    # follows for the totals row — so a part that is sold at 40% on the shop
+    # price but pays its transport out of it reads as the thinner margin it is.
+    # `cost` stays what the shop charged, so it still matches the Shops section.
     rows = _with_margin(list(
         base.annotate(key=Lower('spare_part_name'))
             .values('key')
             .annotate(name=Min('spare_part_name'),
                       times=Count('id'),
                       revenue=_money('total_price'),
-                      cost=_money(SPARE_COST))
-            .annotate(profit=F('revenue') - F('cost'))
+                      cost=_money(SPARE_COST),
+                      transport=_money(TRANSPORT_COST))
+            .annotate(profit=F('revenue') - F('cost') - F('transport'))
             .order_by('-profit')[:PARTS_ROW_CAP]
     ))
 

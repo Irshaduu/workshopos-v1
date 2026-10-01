@@ -43,6 +43,18 @@
   <div class="ia-stat"><div class="k">Shop spend</div>
     <div class="v">₹{{ totals.cost|inr_compact }}</div>
     <div class="b">what the shops charged us, by job date</div></div>
+  {% comment %}
+  TRANSPORT — only in a period that had some, so the section is unchanged the
+  rest of the time. It comes off the margin (see `engine.parts_trading`), so
+  without it here "Charged − Shop spend" would not land on the Margin beside it.
+  Its own tile rather than folded into Shop spend, which must stay the figure
+  the Shops section prints: none of this was paid to a shop.
+  {% endcomment %}
+  {% if totals.transport %}
+  <div class="ia-stat"><div class="k">Transport</div>
+    <div class="v">₹{{ totals.transport|inr_compact }}</div>
+    <div class="b">bringing parts in, never a shop's</div></div>
+  {% endif %}
   <div class="ia-stat"><div class="k">Margin</div>
     <div class="v" style="color:var(--color-success);">₹{{ totals.profit|inr_compact }}</div></div>
   <div class="ia-stat"><div class="k">Margin %</div>
@@ -88,7 +100,7 @@
   <table class="ia-tbl">
     <thead>
       <tr><th>Part</th><th class="num">Times used</th><th class="num">Charged</th>
-          <th class="num">Shop cost</th><th class="num">Margin</th><th class="num">%</th></tr>
+          <th class="num">Shop cost</th>{% if totals.transport %}<th class="num">Transport</th>{% endif %}<th class="num">Margin</th><th class="num">%</th></tr>
     </thead>
     <tbody>
       {% for r in rows %}
@@ -97,6 +109,7 @@
         <td class="num">{{ r.times }}</td>
         <td class="num">₹{{ r.revenue|inr }}</td>
         <td class="num" style="color:var(--color-text-muted);">₹{{ r.cost|inr }}</td>
+        {% if totals.transport %}<td class="num" style="color:var(--color-text-muted);">{% if r.transport %}₹{{ r.transport|inr }}{% else %}—{% endif %}</td>{% endif %}
         <td class="num {% if r.profit < 0 %}neg{% else %}pos{% endif %}">₹{{ r.profit|inr }}</td>
         <td class="num">{{ r.margin|floatformat:1 }}%</td>
       </tr>
@@ -112,6 +125,7 @@
         <td class="num">{{ totals.lines }}</td>
         <td class="num">₹{{ totals.revenue|inr }}</td>
         <td class="num">₹{{ totals.cost|inr }}</td>
+        {% if totals.transport %}<td class="num">₹{{ totals.transport|inr }}</td>{% endif %}
         <td class="num {% if totals.profit < 0 %}neg{% else %}pos{% endif %}">₹{{ totals.profit|inr }}</td>
         <td class="num">{{ totals.margin|floatformat:1 }}%</td>
       </tr>
@@ -126,7 +140,7 @@
 <div class="ia-note">
   <i class="bi bi-info-circle-fill text-primary mt-1"></i>
   <span>This is a <strong>trading</strong> view — what the parts sold for against what the shops
-    billed. It is not the Profit page's bottom line: wages, rent and the rest come off there.</span>
+    billed{% if totals.transport %} and the transport to bring them in{% endif %}. It is not the Profit page's bottom line: wages, rent and the rest come off there.</span>
 </div>
 
 {% if no_shop %}

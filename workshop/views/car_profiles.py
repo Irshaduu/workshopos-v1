@@ -9,7 +9,7 @@ from django.db.models import Count, Max, Prefetch, Q, Sum, F, DecimalField
 from django.db.models.functions import Coalesce, Greatest, TruncDate
 from django.core.paginator import Paginator
 
-from ..analysis_engine import MONEY, SPARE_COST
+from ..analysis_engine import MONEY, PART_COST
 from ..models import (
     JobCard, JobCardConcern, JobCardLabourItem, JobCardSpareItem, OldBill,
     OldBillJobLine, OldBillPartLine, car_color_hex, live_cards,
@@ -43,12 +43,14 @@ def _parts_cost(spares_qs):
     """
     What the parts on these job cards cost the workshop.
 
-    `SPARE_COST` is imported from `analysis_engine`, not restated — it is the
-    app's one definition of what a spare cost (`unit_price x quantity`, a
-    missing price counting as ₹0 and a missing quantity as 1), shared with the
-    Profit page and `SpareShop.update_totals()`. A second copy here would be a
-    second answer to "what did this part cost", and the two would be free to
-    disagree on the screen an owner reads to judge a customer.
+    `PART_COST` is imported from `analysis_engine`, not restated — the app's
+    one definition of what a part cost the WORKSHOP: `SPARE_COST` (the shop's
+    line, or the shelf's cost x quantity, a missing price counting as ₹0) plus
+    the transport paid to bring a spare-shop part in (2026-10-01). A second
+    copy here would be a second answer to "what did this part cost", and the
+    two would be free to disagree on the screen an owner reads to judge a
+    customer. The transport is never part of what a SHOP is owed, which is why
+    the shop ledgers read `SHOP_LINE_COST` instead.
 
     **Both routes are counted, and that is NOT the double-count rule being
     broken.** That rule governs the workshop-wide Profit page, where a warehouse
@@ -59,8 +61,8 @@ def _parts_cost(spares_qs):
     the restock bills.
     """
     return spares_qs.aggregate(
-        cost=Coalesce(Sum(SPARE_COST, output_field=MONEY), ZERO, output_field=MONEY),
-        # Parts whose cost is genuinely unknown. `SPARE_COST` counts a NULL
+        cost=Coalesce(Sum(PART_COST, output_field=MONEY), ZERO, output_field=MONEY),
+        # Parts whose cost is genuinely unknown. `PART_COST` counts a NULL
         # `unit_price` as ₹0, so an uncosted part reads as FREE and inflates the
         # gross profit silently — the one way this figure can be wrong without
         # looking wrong. Counted so the screen can say so.
@@ -437,7 +439,7 @@ def car_profile_detail(request, registration):
             JobCardSpareItem.objects
             .filter(job_card_id__in=[bill.pk for bill in visits])
             .values('job_card_id')
-            .annotate(cost=Coalesce(Sum(SPARE_COST, output_field=MONEY),
+            .annotate(cost=Coalesce(Sum(PART_COST, output_field=MONEY),
                                     ZERO, output_field=MONEY))
             .values_list('job_card_id', 'cost')
         )

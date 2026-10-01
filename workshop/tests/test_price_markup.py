@@ -392,7 +392,9 @@ class TheBadgeCannotEscapeItsTableTests(JobCardFormBase):
         spares = headings('<tbody id="spare-list">')
         self.assertEqual(inventory[-3:], ['Cost / Unit (₹)', 'Unit Price (₹)', 'Total Price (₹)'])
         self.assertNotIn('Customer Price (₹)', inventory)
-        self.assertEqual(spares[-2:], ['Shop Price (₹)', 'Customer Price (₹)'])
+        # Transport sits between the two prices since 2026-10-01 — the money
+        # reads what we paid the shop, what else we paid, what we charge.
+        self.assertEqual(spares[-3:], ['Shop Price (₹)', 'Transport (₹)', 'Customer Price (₹)'])
 
     def test_the_grey_unit_price_is_a_placeholder_never_a_value(self):
         """Nothing in this suite runs the script, so the contract it relies on is

@@ -28,7 +28,7 @@ TURNOVER
                          Supplies Shop bill carries no discount of its own, so
                          a draw is still costed at the bill's line price.
 
-EXPENSES — five real, non-overlapping money-out streams, ALL ON ONE BASIS:
+EXPENSES — six real, non-overlapping money-out streams, ALL ON ONE BASIS:
 what the work done in this period cost.
   1. Spare Shops ....... Parts bought from a spare shop *for a specific job*:
                          the `unit_price` LINE TOTAL on JobCardSpareItem rows
@@ -44,6 +44,11 @@ what the work done in this period cost.
   5. Rent .............. What the premises cost for the whole months in the
                          window, from `RentRate` — never from the deposits.
                          See rent_expense().
+  6. Parts transport ... What it cost to bring spare-shop parts in, paid to
+                         anyone but the shop (2026-10-01). Dated by the job
+                         like the part it came with; never part of a shop's
+                         debt. Shown only when there is some. See
+                         parts_transport().
 
   (+) Other spare purchases — a *transparency* line, normally ₹0. See
       unattributed_spare_expense().
@@ -131,6 +136,7 @@ DATING RULE
 --------------------------------------------------------------------------
 Every stream is dated by its own natural date, so a period never mixes bases:
     car bills + ALL their parts cost → JobCard.admitted_date
+      (parts transport included)
     cashbook (income & expense)      → CashbookEntry.date
     salary                           → SalaryPayment.month (the 1st)
     rent                             → the rent month (the 1st), capped at
@@ -226,6 +232,23 @@ SPARE_COST = Case(
     output_field=MONEY,
 )
 
+#: What it cost to BRING a spare-shop part in, paid to anyone but the shop — a
+#: bus parcel, a courier, an auto (2026-10-01). A line figure; NULL is ₹0. Only
+#: SHOP rows carry one (`JobCardSpareItem.save()` clears it on a draw).
+#:
+#: ⚠ IT IS DELIBERATELY NOT INSIDE `SPARE_COST`, AND THAT IS THE WHOLE SAFETY OF
+#: IT. `SPARE_COST` answers "what did the SHOP charge" as well as "what did the
+#: part cost", and the shop ledgers (`SpareShop.update_totals`, via
+#: `SHOP_LINE_COST`) and the Shops section's per-shop spend read that first
+#: question — the transport was never owed to the shop. So the profit readers
+#: add it themselves, through this one expression or `PART_COST` below.
+TRANSPORT_COST = Coalesce(F('transport_cost'), Value(ZERO, output_field=MONEY))
+
+#: What a part cost THE WORKSHOP: the shop's line (or the shelf's cost) plus the
+#: transport paid to bring it in. For the readers that report a GROSS profit per
+#: car or per mechanic — never for a shop ledger, which keeps `SHOP_LINE_COST`.
+PART_COST = SPARE_COST + TRANSPORT_COST
+
 
 #: ⚠ A SUPPLIES SHOP BILL COSTS ITS `total_amount`, AND NOTHING ELSE. There was a
 #: `SUPPLIER_BILL_COST` here — total less the bill's own discount, floored at
@@ -302,6 +325,14 @@ _DATE_STREAMS = (
     # A shop discount is income on its own date, so All Time has to reach it.
     (lambda: SpareShopDiscount.objects, 'date'),
     (lambda: _supplier_discount_manager(), 'date'),
+    # Parts transport is CASH on the day the part arrived (`cash_position`),
+    # and a part can arrive before the car it is for is admitted — this is an
+    # appointment-driven workshop that orders ahead — or sit in Unassigned
+    # Spares with no card at all. Only rows that carry a transport AND a date:
+    # an ascending `first()` returns a NULL first on SQLite, which would read
+    # as "no bound" and hide the real one.
+    (lambda: JobCardSpareItem.objects.filter(transport_cost__isnull=False,
+                                             received_date__isnull=False), 'received_date'),
 )
 
 
@@ -657,6 +688,27 @@ def warehouse_drawn_spare_cost(start, end):
     """
     qs = _live_spares(start, end).filter(source=JobCardSpareItem.SOURCE_INVENTORY)
     return _sum(qs, SPARE_COST)
+
+
+def parts_transport(start, end):
+    """
+    Stream 6 — what it cost to bring spare-shop parts in, paid to anyone but
+    the shop (2026-10-01, the owners' request).
+
+    DATED LIKE THE PART IT CAME WITH — by `job_card__admitted_date`, over rows
+    on a card — so a job's revenue, its parts and their transport all land in
+    one month and its margin stays internally consistent. A part still waiting
+    in Unassigned Spares carries its transport the way it carries its cost: out
+    of profit until it is fitted (see `unassigned_spare_purchases`).
+
+    ⚠ NOT A SHOP'S DEBT, SO NOT IN ANY SHOP FIGURE. The owners' first plan was
+    to add it into Shop Price, which would have put it on the shop's ledger;
+    this is its own line so the ledgers never see it. The CASH it took is in
+    `cash_position()`, on the day the part arrived — a different date for a
+    different question, the rule every stream here follows.
+    """
+    qs = _live_spares(start, end).filter(source=JobCardSpareItem.SOURCE_SHOP)
+    return _sum(qs, TRANSPORT_COST)
 
 
 def unassigned_spare_purchases():
@@ -1127,15 +1179,24 @@ def parts_trading(start, end):
     """
     base = _live_spares(start, end)
 
+    # ⚠ THE MARGIN IS AFTER TRANSPORT, and `cost` stays what the shops charged.
+    # `cost` is the figure the Shops section and the Profit page's Spare Shops
+    # line print, so folding transport into it would make three screens quote
+    # different shop spend for one period. It is carried beside it instead and
+    # comes off the margin — which is what makes the earnings card land on the
+    # equation, where transport is its own expense line. Always ₹0 on the stock
+    # side: a draw never carries transport.
     def side(qs):
         agg = qs.aggregate(
             revenue=Coalesce(Sum('total_price', output_field=MONEY),
                              Value(ZERO, output_field=MONEY), output_field=MONEY),
             cost=Coalesce(Sum(SPARE_COST, output_field=MONEY),
                           Value(ZERO, output_field=MONEY), output_field=MONEY),
+            transport=Coalesce(Sum(TRANSPORT_COST, output_field=MONEY),
+                               Value(ZERO, output_field=MONEY), output_field=MONEY),
             lines=Count('id'),
         )
-        agg['profit'] = agg['revenue'] - agg['cost']
+        agg['profit'] = agg['revenue'] - agg['cost'] - agg['transport']
         agg['margin'] = float(agg['profit'] / agg['revenue'] * 100) if agg['revenue'] else 0.0
         return agg
 
@@ -1182,10 +1243,13 @@ def earnings_breakdown(start, end, bills, cb_income, salary_total, cashbook_tota
         # figures, on pages an owner opens in one sitting. The two are
         # deliberately different numbers, because shops are settled in
         # instalments, so the WORD is the only thing telling them apart.
+        # `transport` comes off this margin (see `parts_trading`), so the row
+        # names it beside the other two figures — otherwise "charged − spent"
+        # would not add up to the amount printed on the right.
         {'key': 'spare_margin', 'label': 'Spare Parts margin',
          'icon': 'bi-gear-wide-connected', 'hint': '',
          'charged': parts['shop']['revenue'], 'cost': parts['shop']['cost'],
-         'cost_word': 'spent at shops',
+         'cost_word': 'spent at shops', 'transport': parts['shop']['transport'],
          'amount': parts['shop']['profit'], 'negative': False},
         {'key': 'stock_margin', 'label': 'Inventory margin',
          'icon': 'bi-box-seam', 'hint': '',
@@ -1303,9 +1367,12 @@ def build_profit_report(start, end, disclosures=True):
     # `disclosures=False` must never skip it or the comparison period would be
     # measuring a different definition of profit from the headline.
     rent = rent_expense(start, end)
+    # What it cost to bring the spare-shop parts in — part of the equation, so
+    # always computed, for the reason `stock_used` and `rent` are.
+    transport = parts_transport(start, end)
 
     expense_total = (spares + stock_used + salary['total'] + cashbook['total']
-                     + other_spares + rent['total'])
+                     + other_spares + rent['total'] + transport)
     profit = turnover - expense_total
 
     # Ordered biggest-first so the page reads as "where the money went".
@@ -1337,6 +1404,15 @@ def build_profit_report(start, end, disclosures=True):
             'hint': 'Bought for a job, no shop recorded',
             'amount': other_spares, 'icon': 'bi-question-circle',
         })
+    # Only when there is some, like the line above: a permanent ₹0 row is how a
+    # line stops being read. The hint says the one thing the label cannot —
+    # that none of this was owed to a shop.
+    if transport > ZERO:
+        expense_lines.append({
+            'key': 'transport', 'label': 'Parts transport',
+            'hint': 'Bringing parts in — never owed to a shop',
+            'amount': transport, 'icon': 'bi-truck',
+        })
     expense_lines.sort(key=lambda r: r['amount'], reverse=True)
 
     for line in expense_lines:
@@ -1354,6 +1430,7 @@ def build_profit_report(start, end, disclosures=True):
         'salary': salary,
         'cashbook': cashbook,
         'rent': rent,
+        'transport': transport,
         'warehouse_drawn': stock_used,
         # Skipped with the footnotes on the comparison reports, which read
         # nothing but `turnover` and `profit`.
@@ -1429,6 +1506,11 @@ def monthly_series(start, end):
         source=JobCardSpareItem.SOURCE_SHOP, shop__isnull=True)
     oth = grouped(other_qs, 'job_card__admitted_date', SPARE_COST)
 
+    # Parts transport, dated by the job like the part it came with — exactly as
+    # the headline counts it, or the chart stops totalling to the headline.
+    trn = grouped(_live_spares(start, end).filter(source=JobCardSpareItem.SOURCE_SHOP),
+                  'job_card__admitted_date', TRANSPORT_COST)
+
     # ⚠ RENT IS NOT A GROUPED QUERY — it is DERIVED, so it comes from the one
     # implementation rather than from rows. It also has to join `keys`: a month
     # carrying rent and nothing else must still draw a bar, or the chart stops
@@ -1438,13 +1520,13 @@ def monthly_series(start, end):
     rnt = rent_calc.charged_by_month(start, end)
 
     keys = sorted(set(rev) | set(inc) | set(sdisc) | set(sp) | set(inv) | set(cb)
-                  | set(sal) | set(adv) | set(oth) | set(rnt))
+                  | set(sal) | set(adv) | set(oth) | set(rnt) | set(trn))
     rows = []
     for k in keys:
         t = rev.get(k, ZERO) + inc.get(k, ZERO) + sdisc.get(k, ZERO)
         e = (sp.get(k, ZERO) + inv.get(k, ZERO) + cb.get(k, ZERO)
              + sal.get(k, ZERO) + adv.get(k, ZERO) + oth.get(k, ZERO)
-             + rnt.get(k, ZERO))
+             + rnt.get(k, ZERO) + trn.get(k, ZERO))
         y, m = k.split('-')
         rows.append({
             'key': k,
@@ -1569,6 +1651,23 @@ def cash_position(start, end):
     rent_paid = rent_calc.deposited_between(start, end)
     owner_taken = _sum(
         OwnerWithdrawal.objects.filter(date__range=(start, end)), F('amount'))
+    # ⚠ PARTS TRANSPORT IS CASH, ON THE DAY THE PART ARRIVED — the bus parcel is
+    # paid for at the bus stand when it is collected. So it is dated by the
+    # row's Received date, and by its job card's admitted date when nobody
+    # filled one in. The PROFIT side dates the same money by the job instead;
+    # two dates for two questions, the split rent and stock already get.
+    #
+    # A part still waiting in Unassigned Spares counts too: its transport left
+    # the drawer when it arrived, whether or not it is on a car yet. That is why
+    # this is not `_live_spares` — rows with no job card are kept — and why
+    # the Hub refuses a transport with no Received date to date it by.
+    transport_paid = _sum(
+        JobCardSpareItem.objects
+        .filter(Q(job_card__isnull=True) | live_cards('job_card__'),
+                source=JobCardSpareItem.SOURCE_SHOP, transport_cost__isnull=False)
+        .annotate(_paid_on=Coalesce('received_date', 'job_card__admitted_date'))
+        .filter(_paid_on__range=(start, end)),
+        TRANSPORT_COST)
 
     money_in = [
         {'label': 'Customer bills settled', 'hint': 'walk-in, by the day it was settled',
@@ -1599,6 +1698,13 @@ def cash_position(start, end):
         {'label': 'Owner withdrawals', 'hint': 'profit taken out, not a cost',
          'amount': owner_taken},
     ]
+    # Only when there is some — the same rule as its line on the Profit page,
+    # so the card does not carry a ₹0 row most months. Never "Spare shops":
+    # none of this was paid to a shop, and the line above that says so already.
+    if transport_paid > ZERO:
+        money_out.insert(2, {'label': 'Parts transport',
+                             'hint': 'bringing parts in, by the day they arrived',
+                             'amount': transport_paid})
 
     total_in = sum((r['amount'] for r in money_in), ZERO)
     total_out = sum((r['amount'] for r in money_out), ZERO)

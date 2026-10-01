@@ -793,7 +793,12 @@
         `display: block` and so costs a blank line. "₹0 charged − ₹0 paid to
         shops" is both true and the same height as every other row.
       {% endcomment %}
-      {% if 'charged' in r %}<span class="hint">₹{{ r.charged|inr }} charged − ₹{{ r.cost|inr }} {{ r.cost_word }}</span>
+      {% comment %}
+        The spare row's transport comes off its margin too, so it is named here
+        or "charged − spent" would not land on the amount on the right. Only
+        when there is some — the stock row never carries any.
+      {% endcomment %}
+      {% if 'charged' in r %}<span class="hint">₹{{ r.charged|inr }} charged − ₹{{ r.cost|inr }} {{ r.cost_word }}{% if r.transport %} − ₹{{ r.transport|inr }} transport{% endif %}</span>
       {% else %}<span class="hint">{{ r.hint }}</span>{% endif %}</span>
     </span>
     {% comment %}

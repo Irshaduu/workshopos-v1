@@ -194,6 +194,24 @@ CASHBOOK_STEERS = [
                'are counted <strong>twice</strong> &mdash; once here and once '
                'against the shop.',
     }),
+    # ⚠ THE FIFTH GROUP (2026-10-01): TRANSPORT FOR A PART LIVES ON THE PART.
+    # The job card's spare row has its own Transport box, which is what puts
+    # the cost into the customer's price (rule B) and into that car's profit.
+    # Keyed here instead, the customer is never charged it; keyed in both
+    # places, it is counted twice. General errands are real Cashbook rows, so
+    # this only asks.
+    #
+    # ⚠ "COURIER" IS DELIBERATELY NOT A WORD HERE. "Courier Charges" is one of
+    # the ordinary ledger rows `test_WORD_BOUNDARIES_keep_the_commonest_entry_
+    # in_the_ledger_quiet` keeps silent — a question on the commonest rows is
+    # a question nobody reads by the end of the week.
+    (['transport', 'transportation', 'parcel'], {
+        'ask': 'Is this transport for a part?',
+        'why': 'Part transport goes in the <strong>Transport</strong> box on '
+               'that part&rsquo;s job card &mdash; that is what adds it to the '
+               'customer&rsquo;s price. Keyed here as well, it is counted '
+               '<strong>twice</strong>.',
+    }),
 ]
 
 

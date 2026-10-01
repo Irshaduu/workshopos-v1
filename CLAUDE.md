@@ -664,7 +664,7 @@ The job card suggests a customer price (2026-09-16, the owners' request):
 
 | row | cost | suggestion | the badge |
 |---|---|---|---|
-| **Spare Parts** | Shop Price (a line total) | Customer Price = shop price × 1.40, every spare | after Customer Price |
+| **Spare Parts** | Shop Price (a line total), plus Transport | Customer Price = shop price × 1.40 + transport at cost, every spare (rule B — see "Parts transport") | after Customer Price |
 | **Inventory** | Cost / Unit — read-only, the shelf's weighted average | customer Unit Price = cost × (1 + the product's own markup); the Total Price follows | after Total Price |
 
 **THE INVENTORY TOTAL IS HEADED "TOTAL PRICE"; SPARE PARTS KEEPS "CUSTOMER
@@ -784,6 +784,107 @@ suggestion back and drew a dash; the settled card filled nothing after unlocking
 At 1280, 768 and 375px the badge and the cost figure sit on the boxes' centre
 line to the pixel, no row grew, and no page scrolls sideways — see the
 `visually-hidden` trap below for the one that did.
+
+
+## Parts transport
+
+**A spare row carries a Transport box: what it cost to bring the part in, paid
+to anyone but the shop** — a bus parcel, a courier, an auto, our own boy's fuel
+(2026-10-01, the owners' request). `JobCardSpareItem.transport_cost`
+(`0087`), nullable, a LINE figure like the two prices either side of it:
+`Shop Price | Transport | Customer Price | badge`. SHOP rows only —
+`save()` clears it on a warehouse draw, whose delivery was paid on the Supplies
+Shop bill.
+
+⚠ **IT IS NEVER THE SHOP'S DEBT, AND THAT IS WHY IT IS ITS OWN BOX.** The
+owners' first plan was to add it into Shop Price (₹22,000 + ₹900 = ₹22,900),
+which puts ₹900 on the shop's ledger that nobody owes the shop, and makes the
+ledger stop matching the shop's own book. Transport the SHOP prints on its bill
+is the shop's, and stays in Shop Price — the rule has always been "copy the
+shop's bill".
+
+⚠ **NOT IN `SPARE_COST`, AND NOTHING MAY FOLD IT IN.** `SPARE_COST` answers
+"what did the shop charge" as well as "what did the part cost", and the shop
+ledgers (`SHOP_LINE_COST`), the Profit page's Spare Shops line and the Shops
+section's per-shop spend read the first question. Profit readers add transport
+through **`analysis_engine.TRANSPORT_COST`**, or **`PART_COST`**
+(`SPARE_COST + TRANSPORT_COST`) for a per-car or per-mechanic gross profit.
+
+**WHERE THE MONEY GOES — and where it does not:**
+
+| | |
+|---|---|
+| **customer's bill** | never a line — only inside the part's own price (the owners: *charge it nicely*) |
+| **shop ledger** | never |
+| **Profit page** | stream 6, **Parts transport**, dated by `job_card__admitted_date` like the part it came with; shown only when there is some |
+| **earnings card / Deep Analysis Spare Parts** | the spare margin is counted AFTER transport (`parts_trading` carries `transport` beside `cost`, and `cost` stays what the shops charged) |
+| **Car Profile, Mechanics** | gross profit through `PART_COST` |
+| **Cash Tracking** | **Parts transport**, on the row's Received date, its job card's admitted date when there is none; Unassigned rows count too |
+| **All Time** | `_DATE_STREAMS` reaches a transport's Received date (a part can arrive before the car is admitted — this workshop orders ahead) |
+
+⚠ **THE SUGGESTED PRICE IS RULE B — the markup on the PART, transport at
+cost** (the owners chose it over a markup on shop + transport): `shop × 1.40 +
+transport`, the WHOLE rounded up to the rupee (`suggestSparePaise`). ₹1,000 +
+₹500 → ₹1,900; ₹1 + ₹500 → ₹502. **The badge measures the part's own markup,
+transport taken back out** — `(price − transport − shop) ÷ shop`
+(`spareMarkupPercent`) — so ₹1,900 reads 40%, and a price saved at ₹1,400
+before ₹500 of transport was typed reads **−10% red**. That red is the point:
+the silent loss the owners would otherwise have had. A ₹0 shop price (a
+warranty replacement, a gift) suggests nothing and draws no badge — what a
+customer pays for a free part is a person's decision, never "just the
+transport". Empty Transport is zero; a typed one that cannot be read
+(`1,000`) stops the suggestion rather than being ignored.
+
+**Rule 5 still holds:** a saved price never follows a later transport — only
+the badge moves.
+
+**Splitting one parcel is the typist's call** — 600 over three parts as
+200/200/200 or 300/200/100. The system never divides. ⚠ The boxes are the
+ONLY record of that parcel, so the shares must add up to what was paid; a
+shortfall is missing from Profit and Cash Tracking with nothing to catch it —
+the same trust as copying Shop Price off the shop's bill.
+
+**Unassigned Spares carries the same box** (Office and Owner; never read for
+Floor), shown under the price as "+ ₹400 transport" rather than as a column of
+dashes. It travels with the part through "Import from Unassigned", whose
+Received date comes too, so Cash Tracking keeps filing it on the arrival day.
+The Hub refuses a transport with no Received date — its cash would be in no
+period at all. The shop page's own add form has no box.
+
+⚠ **A ROW DELETED TAKES ITS TRANSPORT WITH IT.** A part returned to the shop
+after its courier was paid: record that courier in the Cashbook.
+
+**The Cashbook asks** "Is this transport for a part?" on `transport`,
+`transportation`, `parcel`. ⚠ **Not `courier`** — "Courier Charges" is one of
+the ordinary rows the word-boundary test keeps quiet.
+
+**Floor** is shown it nowhere; it renders inside the hidden cell like the
+prices and is pinned by `_floor_locked_data`. ⚠ That lock now pins **whether or
+not the key is posted** — it pinned only `if key in data`, so a crafted payload
+that OMITTED a price erased Office's figure.
+
+⚠ **A PART'S ₹0 SURVIVES A SAVE NOW — found while building this, measured
+first.** `clearZeroInputs()` blanked every zero box on load, the blank posted,
+and a part saved at ₹0 (given away, a free warranty part) came back NULL —
+"no cost recorded" and chased by the settle dialog. Part money boxes are
+exempt (`PART_MONEY`); a zero still blanks elsewhere (the labour charge on a new
+card), where it means "nothing typed".
+
+Measured in the browser on the development data (2026-10-01): the column sits
+under its heading on saved and added rows; 1000 → 1400, +500 → 1900 (40%),
+`1,000` → withdrawn, 45.50 → 1446, 1 + 500 → 502 (100%), shop 0 → nothing; a
+saved 1260 stayed 1260 and its badge went −16% red on 500 of transport; saved,
+the bill and the shop's balance did not move while Profit, the earnings card,
+the chart and Cash Tracking all carried the ₹500; the import carried 400 and
+suggested 4600; a ₹0 price survived two saves. At 375px no page scrolls
+sideways — after fixing the Hub's own (below).
+→ `workshop/tests/test_parts_transport.py`, `workshop/tests/js/pricing-core.test.js`
+
+⚠ **THE UNASSIGNED HUB WAS WIDER THAN A PHONE, before any of this.** Its table's
+"Actions" heading is a `visually-hidden` label — `position: absolute` — with no
+positioned cell around it, so it escaped the table's sideways scroller and
+widened the page to 712px at 375. `.ua-table th { position: relative }`. The
+markup-badge trap below, on another page.
 
 
 ## Warehouse stock & costing
@@ -1435,7 +1536,7 @@ profit (that is the whole reason `OwnerWithdrawal` exists), and **rent** —
 either the monthly charge or a daily handover — is counted twice, since rent
 became its own expense line read from the rate.
 
-**FOUR WORD LISTS IN THE FILE, PLUS EVERY SHOP AND OWNER NAME FROM THE
+**FIVE WORD LISTS IN THE FILE, PLUS EVERY SHOP AND OWNER NAME FROM THE
 DATABASE**, so a rename or a new row is protected with no code change. ⚠ The
 totals are deliberately not written down here any more: they were "SEVEN
 GROUPS, 27 KEYWORDS", which counted six seeded shops and two owners and so was
@@ -1448,6 +1549,7 @@ prints the truth on any run.
 | salary · salaries · wage(s) · advance · bonus | Salary & Advance | counted **twice** |
 | withdrawal · withdraw · drawing(s) · take out · takeout | Owner Withdrawals | makes profit look **smaller** |
 | shop · spare · parts · supplier · supplies | that shop's page | counted **twice** |
+| transport · transportation · parcel (never *courier*) | that part's Transport box on the job card | not in the customer's price; counted **twice** if on both |
 | **every spare-shop and Supplies Shop name** | that shop's page | counted **twice** |
 | **each owner's name** | Owner Withdrawals | makes profit look **smaller** |
 
@@ -7209,9 +7311,10 @@ Three things are load-bearing:
 hides prices from Floor but still renders the inputs inside a `d-none` cell — it
 has to, or a mechanic saving the card would blank what Office entered. That left
 the rule as UI-only: a Floor login POSTing `total_price=1` turned a ₹5,000 bill
-into ₹1. `_floor_locked_data()` rewrites every posted `unit_price` /
+into ₹1. `_floor_locked_data()` rewrites every `unit_price` / `transport_cost` /
 `total_price` / `customer_rate` with the value already stored (blank for a new row)
-before the formsets are bound.
+before the formsets are bound — **whether or not the key was posted** (since
+2026-10-01; it pinned only a posted key, so omitting one erased the price).
 
 ⚠ **Do not "simplify" it by deleting the keys instead** — an absent formset field
 saves as empty and wipes the price, the exact failure the rendered-but-hidden
@@ -10544,7 +10647,7 @@ python manage.py runserver
 ```
 
 ```bash
-# Full test suite — 88 files, 2,936 tests (counted 2026-09-30). Always SQLite (see below).
+# Full test suite — 89 files, 2,976 tests (counted 2026-10-01). Always SQLite (see below).
 # ⚠ IT RUNS AFTER A **MAJOR** UPDATE, NOT BEFORE EVERY COMMIT (the owner's call,
 # 2026-09-20) — and "major" is decided by BLAST RADIUS, measured, or the word
 # quietly comes to mean "never". FULL suite: any model, migration, form, signal,
@@ -11055,8 +11158,8 @@ table into the general roster at `/manage/?section=staff`. Only
 
 # Testing conventions
 
-Tests live in `workshop/tests/` and `inventory/` — **88 files, 2,936 tests**,
-re-counted 2026-09-30. (`workshop/tests/` is 82 `test_*.py` plus `tests.py`;
+Tests live in `workshop/tests/` and `inventory/` — **89 files, 2,976 tests**,
+re-counted 2026-10-01. (`workshop/tests/` is 83 `test_*.py` plus `tests.py`;
 `inventory/` is 5, one of which is `tests_suppliers.py` and so is missed by a
 `test_*.py` glob — which is why the two halves used to be written down wrong.)
 

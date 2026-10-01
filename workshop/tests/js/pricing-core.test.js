@@ -114,6 +114,89 @@ test('a price the column could not hold is never suggested', () => {
 });
 
 /* ------------------------------------------------------------------------- */
+/* Transport on a spare part — rule B: markup on the part, transport at cost  */
+/* ------------------------------------------------------------------------- */
+
+test('an empty Transport box is zero, a typed one is read strictly', () => {
+    assert.strictEqual(P.parseTransport(''), 0n);
+    assert.strictEqual(P.parseTransport('   '), 0n);
+    assert.strictEqual(P.parseTransport('500'), 50000n);
+    assert.strictEqual(P.parseTransport('45.50'), 4550n);
+    // Typed but unreadable is NULL, never zero — a transport the arithmetic
+    // cannot see is a cost the customer's price would quietly miss.
+    for (const bad of ['1,000', 'abc', '-5', '12.345']) {
+        assert.strictEqual(P.parseTransport(bad), null, JSON.stringify(bad));
+    }
+    assert.strictEqual(P.parseTransport(undefined), null);
+});
+
+test('the owners\' example: ₹1,000 at 40% with ₹500 transport is ₹1,900', () => {
+    assert.strictEqual(P.suggestSparePaise(money('1000'), money('500'), 40), 190000n);
+    // A ₹1 part: 1.40 + 500 = 501.40, up to ₹502 — the case walked through
+    // with the owner.
+    assert.strictEqual(P.suggestSparePaise(money('1'), money('500'), 40), 50200n);
+});
+
+test('it rounds the WHOLE price up, never the two halves separately', () => {
+    assert.strictEqual(P.suggestSparePaise(money('1000'), money('45.50'), 40), 144600n);   // 1445.50
+    assert.strictEqual(P.suggestSparePaise(money('1057.14'), money('120.25'), 40), 160100n); // 1600.246
+});
+
+test('with no transport it is exactly the plain suggestion', () => {
+    for (const [cost, markup] of [['1000', 40], ['1234.56', 40], ['700', 10], ['0.07', 40]]) {
+        assert.strictEqual(P.suggestSparePaise(money(cost), 0n, markup),
+                           P.suggestPaise(money(cost), markup), `${cost} at ${markup}%`);
+    }
+});
+
+test('no shop price, or an unreadable transport, means no suggestion', () => {
+    // A ₹0 shop price is a free part — a warranty replacement or a gift — and
+    // what the customer pays for one is a person's decision, never ₹500.
+    assert.strictEqual(P.suggestSparePaise(0n, money('500'), 40), null);
+    assert.strictEqual(P.suggestSparePaise(null, money('500'), 40), null);
+    assert.strictEqual(P.suggestSparePaise(money('1000'), null, 40), null);
+    assert.strictEqual(P.suggestSparePaise(money('1000'), P.parseTransport('1,000'), 40), null);
+    assert.strictEqual(P.suggestSparePaise(money('1000'), money('500'), '40.5'), null);
+});
+
+test('a spare price the column could not hold is never suggested', () => {
+    assert.strictEqual(P.suggestSparePaise(money('71428570'), money('1'), 40), 9999999900n);
+    assert.strictEqual(P.suggestSparePaise(money('71428570'), money('2'), 40), null);
+});
+
+test('the spare badge reads the markup on the PART, transport taken out', () => {
+    assert.strictEqual(P.spareMarkupPercent(money('1900'), money('1000'), money('500')), 40);
+    assert.strictEqual(P.spareMarkupPercent(money('502'), money('1'), money('500')), 100);
+    assert.strictEqual(P.spareMarkupPercent(money('1446'), money('1000'), money('45.50')), 40);
+    // Without transport it is the plain markup.
+    assert.strictEqual(P.spareMarkupPercent(money('1400'), money('1000'), 0n), 40);
+    assert.strictEqual(P.spareMarkupPercent(money('1198'), money('1000'), 0n),
+                       P.markupPercent(money('1198'), money('1000')));
+});
+
+test('a price that no longer covers the transport goes RED — the silent loss', () => {
+    // ₹1,400 saved at 40%, then ₹500 of transport typed: the part now loses
+    // ₹100, and the badge says so instead of staying green.
+    assert.strictEqual(P.spareMarkupPercent(money('1400'), money('1000'), money('500')), -10);
+    assert.strictEqual(P.band(P.spareMarkupPercent(money('1400'), money('1000'), money('500')), 20), 'loss');
+    // A price below even the transport is still a figure, not a blank.
+    assert.strictEqual(P.spareMarkupPercent(money('400'), money('1000'), money('500')), -110);
+});
+
+test('a suggested spare price never reads below its own markup', () => {
+    for (const [cost, transport] of [['1057.14', '120.25'], ['1', '500'], ['333.33', '0.01'], ['1000', '45.50']]) {
+        const price = P.suggestSparePaise(money(cost), money(transport), 40);
+        assert.ok(P.spareMarkupPercent(price, money(cost), money(transport)) >= 40, `${cost} + ${transport}`);
+    }
+});
+
+test('no shop price, no price, or an unreadable transport → no spare badge', () => {
+    assert.strictEqual(P.spareMarkupPercent(money('1400'), 0n, money('500')), null);
+    assert.strictEqual(P.spareMarkupPercent(null, money('1000'), 0n), null);
+    assert.strictEqual(P.spareMarkupPercent(money('1400'), money('1000'), null), null);
+});
+
+/* ------------------------------------------------------------------------- */
 /* The markup a price carries — the badge                                    */
 /* ------------------------------------------------------------------------- */
 

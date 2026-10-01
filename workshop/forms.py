@@ -880,11 +880,25 @@ class ShopSpareRowForm(forms.ModelForm):
             self.add_error('received_date', problem)
         return cleaned
 
+    def clean_transport_cost(self):
+        """
+        Refused when negative, never clamped — the rule for every typed figure
+        here. A negative transport would make the part look cheaper to bring in
+        than free, and would raise the Profit page by exactly that much. Blank
+        and ₹0 both mean "no transport". The column's own `max_digits` already
+        refuses a figure too large to store, and Django refuses NaN and
+        Infinity, so neither can reach PostgreSQL as a 500.
+        """
+        value = self.cleaned_data.get('transport_cost')
+        if value is not None and value < 0:
+            raise forms.ValidationError("Transport cannot be negative.")
+        return value
+
     # Everything a person can put on this row EXCEPT the name and the status.
     # Status is excluded deliberately: it defaults to PENDING and is never
     # blank, so counting it would make every untouched row look filled in.
     CONTENT_FIELDS = ('quantity', 'ordered_date', 'received_date', 'unit_price',
-                      'total_price', 'customer_rate', 'shop')
+                      'transport_cost', 'total_price', 'customer_rate', 'shop')
 
     def _row_has_content(self, cleaned):
         return any(cleaned.get(name) not in (None, '') for name in self.CONTENT_FIELDS)
@@ -912,7 +926,8 @@ JobCardSpareFormSet = inlineformset_factory(
     JobCardSpareItem,
     form=ShopSpareRowForm,
     formset=ShopSpareFormSet,
-    fields=['spare_part_name', 'quantity', 'shop_name', 'status', 'unit_price', 'total_price', 'ordered_date', 'received_date'],
+    fields=['spare_part_name', 'quantity', 'shop_name', 'status', 'unit_price',
+            'transport_cost', 'total_price', 'ordered_date', 'received_date'],
     extra=0,
     can_delete=True,
     validate_min=False,
@@ -945,6 +960,14 @@ JobCardSpareFormSet = inlineformset_factory(
         'unit_price': forms.TextInput(attrs={
             'class': 'form-control text-end',
             'placeholder': 'Shop Price (₹)'
+        }),
+        # What it cost to bring the part in, paid to anyone but the shop — see
+        # `JobCardSpareItem.transport_cost`. `jc-optional`: most parts come from
+        # a shop that delivers, so an empty box is the ordinary case and must
+        # not wear the "still to fill" hairline on every row.
+        'transport_cost': forms.TextInput(attrs={
+            'class': 'form-control text-end jc-optional',
+            'placeholder': 'Transport (₹)'
         }),
         'total_price': forms.TextInput(attrs={
             'class': 'form-control text-end fw-bold',

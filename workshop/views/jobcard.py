@@ -304,9 +304,15 @@ def _form_context(request, *, form, concern_formset, spare_formset,
         'next_url': request.GET.get('next'),
         'spare_shops': _shop_options(jobcard),
         **_photo_context(jobcard),
-        'unassigned_spares': JobCardSpareItem.objects.filter(
-            job_card__isnull=True
-        ).select_related('shop').order_by('-ordered_date'),
+        # Moving a part between a car and the Unassigned Hub — both directions —
+        # is Office's and an owner's (AUD-0109). The list carries every Hub
+        # row's shop price and transport, so for Floor it is not even fetched:
+        # hiding the modal would still have sent the prices in the page.
+        'can_move_unassigned': is_office_or_owner(request.user),
+        'unassigned_spares': (
+            JobCardSpareItem.objects.filter(job_card__isnull=True)
+            .select_related('shop').order_by('-ordered_date')
+            if is_office_or_owner(request.user) else None),
         'problems': problems or [],
         # A settled card past Office's 24 hours shows WHY instead of an Unlock
         # button that `jobcard_edit` would refuse — a door somebody can see and
@@ -319,6 +325,36 @@ def _form_context(request, *, form, concern_formset, spare_formset,
             and is_office_or_owner(request.user) and not is_owner(request.user)
             and delete_window.is_past_window(jobcard.paid_date)),
     }
+
+
+def _consume_imported_unassigned(request, shops_to_update):
+    """
+    Delete the Unassigned Hub rows this save imported onto the card, so a part
+    is never on its shop's ledger twice — once on the Hub, once on the car.
+    The shops they belonged to join `shops_to_update`.
+
+    ⚠ OFFICE AND OWNER ONLY, ON THE SERVER (AUD-0109, 2026-10-01). The import
+    copies the Hub row's Shop Price and Transport into a NEW card row. For
+    Floor, `_floor_locked_data` pins every price on a new row to blank — so a
+    Floor import saved the part with no price and no transport, and this then
+    deleted the Hub row that carried both. Measured: a shop's balance ₹3,000 →
+    ₹0 and ₹400 of transport gone, from one ordinary save. The import is hidden
+    from Floor in the page; this is the control, so a crafted Floor post
+    deletes nothing and the Hub row keeps its money.
+
+    Only digit ids are read: `pk__in` raises on anything else, and that would
+    be a 500 in the middle of a save.
+    """
+    if not is_office_or_owner(request.user):
+        return
+    ids = [raw.strip() for raw in request.POST.getlist('imported_unassigned_ids')
+           if raw.strip().isdigit()]
+    if not ids:
+        return
+    old_items = JobCardSpareItem.objects.filter(pk__in=ids, job_card__isnull=True)
+    shops_to_update.update(
+        old_items.exclude(shop_id=None).values_list('shop_id', flat=True))
+    old_items.delete()
 
 
 def _reconcile_settled_bill(jobcard):
@@ -587,14 +623,9 @@ def jobcard_create(request):
                         if shop_obj:
                             shops_to_update.add(shop_obj.pk)
 
-                    # Delete imported unassigned spares to prevent duplicates
-                    imported_ids = request.POST.getlist('imported_unassigned_ids')
-                    if imported_ids:
-                        old_items = JobCardSpareItem.objects.filter(pk__in=imported_ids, job_card__isnull=True)
-                        for old_item in old_items.select_related('shop'):
-                            if old_item.shop_id:
-                                shops_to_update.add(old_item.shop_id)
-                        old_items.delete()
+                    # Imported Hub rows are deleted so a part is never owed twice —
+                    # Office and Owner only (AUD-0109).
+                    _consume_imported_unassigned(request, shops_to_update)
 
                     # Update totals for every affected shop, old and new alike.
                     for shop in SpareShop.objects.filter(pk__in=shops_to_update):
@@ -1108,14 +1139,9 @@ def jobcard_edit(request, pk):
                     if shop_obj:
                         shops_to_update.add(shop_obj.pk)
 
-                # Delete imported unassigned spares to prevent duplicates
-                imported_ids = request.POST.getlist('imported_unassigned_ids')
-                if imported_ids:
-                    old_items = JobCardSpareItem.objects.filter(pk__in=imported_ids, job_card__isnull=True)
-                    for old_item in old_items.select_related('shop'):
-                        if old_item.shop_id:
-                            shops_to_update.add(old_item.shop_id)
-                    old_items.delete()
+                # Imported Hub rows are deleted so a part is never owed twice —
+                # Office and Owner only (AUD-0109).
+                _consume_imported_unassigned(request, shops_to_update)
 
                 # Update totals for every affected shop, old and new alike.
                 for shop in SpareShop.objects.filter(pk__in=shops_to_update):

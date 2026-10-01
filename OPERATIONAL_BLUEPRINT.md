@@ -84,6 +84,7 @@ graph TD
    - Manage Bulk Payers (create, transfer bills, process cascade payments)
    - View Pending Bills dashboard
    - Manage Spare Shops (create, edit, pay, view ledger, print) and edit or delete rows in the Unassigned Spares Hub
+   - Move a part between a job card and the Unassigned Spares Hub, both ways (Move to Unassigned, Import from Unassigned) — Floor is offered neither, because an import carries the part's shop price and transport
    - Manage Master Lists (Brands, Models)
    - View Car Profiles (vehicle history)
    - Run Data Cleanup — the one screen for spare and concern names (rename, merge, delete duplicates)
@@ -830,9 +831,10 @@ SPARE SHOP (Supplier)
    │
    ├── Unassigned Spares Hub  (FLOOR can reach this one — add only):
    │     Add legacy stock/balances not linked to any job card
-   │     Items can be moved from job cards to Unassigned
+   │     Items can be moved from job cards to Unassigned (Office/Owner)
    │     Original vehicle info is preserved when unassigning
-   │     Unassigned items can be imported into new job cards
+   │     Unassigned items can be imported onto job cards (Office/Owner;
+   │       the shop price, transport and Received date come with them)
    │     Grouped by shop; an ARCHIVED shop's rows stay listed (badged) and
    │       keep their shop when edited — archiving hides a shop from the
    │       pickers, never what is owed to it

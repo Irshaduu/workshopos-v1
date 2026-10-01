@@ -249,6 +249,89 @@ class UnassignedLifecycleTests(SpareFlowBase):
         self.assertEqual(self.owed(), D('1000.00'), "one purchase, counted once")
 
 
+class MovingToAndFromTheHubIsOfficesTests(SpareFlowBase):
+    """
+    AUD-0109 (2026-10-01). "Import from Unassigned" copies a Hub row's Shop
+    Price and Transport into a NEW card row and the save deletes the Hub row.
+    Floor could open it, and a Floor save pins every price on a new row to
+    blank — so the part landed with no price and the Hub row carrying it was
+    gone: measured, a shop's balance ₹3,000 → ₹0 from one ordinary save. The
+    modal also showed Floor the shop price. Both directions are Office's now —
+    "Move to Unassigned" was already @office_required, so Floor met an error
+    page there.
+    """
+
+    def floor(self):
+        group, _ = Group.objects.get_or_create(name='Floor')
+        user = User.objects.create_user(username='floor_flow', password='pw')
+        user.groups.add(group)
+        client = Client()
+        client.login(username='floor_flow', password='pw')
+        return client
+
+    def orphan(self):
+        self.client.post(reverse('spare_shop_add_unassigned', args=[self.shop.pk]), {
+            'spare_part_name': 'Starter Motor', 'unit_price': '3000', 'quantity': '1',
+        })
+        return JobCardSpareItem.objects.get(job_card__isnull=True)
+
+    def imported(self, ids, **over):
+        return self.payload(**{
+            'spares-TOTAL_FORMS': '1', 'spares-INITIAL_FORMS': '0',
+            'spares-0-spare_part_name': 'Starter Motor',
+            'spares-0-quantity': '1', 'spares-0-unit_price': '3000',
+            'spares-0-total_price': '4200', 'spares-0-status': 'RECEIVED',
+            'spares-0-shop_name': str(self.shop.pk),
+            'spares-0-ordered_date': '', 'spares-0-received_date': '',
+            'imported_unassigned_ids': ids,
+            **over,
+        })
+
+    def test_a_floor_import_on_an_edit_deletes_nothing(self):
+        orphan = self.orphan()
+        self.assertEqual(self.owed(), D('3000.00'))
+        self.floor().post(reverse('jobcard_edit', args=[self.jc.pk]),
+                          self.imported(str(orphan.pk)))
+        self.assertTrue(JobCardSpareItem.objects.filter(
+            pk=orphan.pk, job_card__isnull=True).exists())
+        self.assertEqual(self.owed(), D('3000.00'), "the shop is still owed for it")
+
+    def test_a_floor_import_on_a_new_card_deletes_nothing(self):
+        orphan = self.orphan()
+        self.floor().post(reverse('jobcard_create'), self.imported(
+            str(orphan.pk), registration_number='KL20AA0002'))
+        self.assertTrue(JobCardSpareItem.objects.filter(
+            pk=orphan.pk, job_card__isnull=True).exists())
+        self.assertEqual(self.owed(), D('3000.00'))
+
+    def test_an_unreadable_id_is_ignored_rather_than_a_500(self):
+        orphan = self.orphan()
+        resp = self.client.post(reverse('jobcard_edit', args=[self.jc.pk]),
+                                self.imported('abc'))
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(JobCardSpareItem.objects.filter(pk=orphan.pk).exists())
+
+    def test_floor_is_offered_neither_direction_and_sent_no_hub_prices(self):
+        self.spare()
+        self.orphan()
+        resp = self.floor().get(reverse('jobcard_edit', args=[self.jc.pk]))
+        html = resp.content.decode()
+        self.assertIsNone(resp.context['unassigned_spares'])
+        for marker in ('importUnassignedModal', 'openImportUnassignedModal(',
+                       'unassignConfirmModal', 'confirmUnassign(', 'unassign-form-'):
+            self.assertNotIn(marker, html)
+        self.assertIn('Ask the office to move it to Unassigned', html)
+
+    def test_office_is_still_offered_both(self):
+        self.spare()
+        self.orphan()
+        html = self.client.get(reverse('jobcard_edit', args=[self.jc.pk])).content.decode()
+        for marker in ('importUnassignedModal', 'openImportUnassignedModal(',
+                       'unassignConfirmModal', 'confirmUnassign(', 'unassign-form-'):
+            self.assertIn(marker, html)
+        self.assertIn('Starter Motor', html)
+
+
 class ShopPaymentTests(SpareFlowBase):
     def test_payment_then_reversal(self):
         self.spare(unit_price=D('10000'), quantity=D('1'), total_price=D('12000'))

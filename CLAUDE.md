@@ -365,6 +365,22 @@ this is the control.
   is owed.
 → `test_a_crafted_price_from_floor_is_ignored`, `workshop/tests/test_unassigned_spares.py`
 
+⚠ **MOVING A PART BETWEEN A CAR AND THE HUB IS OFFICE'S AND AN OWNER'S, BOTH
+WAYS — and a Floor IMPORT used to erase the shop's debt (AUD-0109, fixed
+2026-10-01).** "Import from Unassigned" copies a Hub row's Shop Price and
+Transport into a NEW card row, and the save deletes the Hub row. For Floor,
+`_floor_locked_data` pins every price on a new row to blank, so the part landed
+with no price and the row that carried it was gone — measured, a shop's balance
+₹3,000 → ₹0 from one ordinary save, and the modal showed Floor the shop price.
+Now `_consume_imported_unassigned` (`views/jobcard.py`, the one implementation
+for create and edit) ignores the ids from a Floor post, and reads only digit
+ids (`pk__in` raised on anything else, a 500 mid-save). The page sends Floor no
+Hub list at all (`unassigned_spares` is None), and `can_move_unassigned` gates
+the import ⋮, **Move to Unassigned** (`spare_shop_unassign_item` was already
+`@office_required`, so Floor met an error page) and both modals. The data-loss
+warning tells Floor to ask the office instead.
+→ `MovingToAndFromTheHubIsOfficesTests`
+
 **"Ordered For" (`original_vehicle_info`) is a NOTE, not a link to a car.** Free
 text, no picker, no FK — at the moment somebody types it the car often has no job
 card to point at, and half the point is being able to write "Audi A4 — the white
@@ -7358,7 +7374,8 @@ catalog, payments — is `@office_required`. "Manage Database" is a **read-only
 Category browser**.
 
 **Unassigned Spares is Floor's only door into the Spare Shops section** (add-only,
-no prices). `/spare-shops/` is already in `DRAWER_SECTION_PREFIXES`, so that link
+no prices). Moving a part onto a car from it, or back to it, is Office's — see
+AUD-0109 under "Spare parts — the two routes". `/spare-shops/` is already in `DRAWER_SECTION_PREFIXES`, so that link
 lights the Manage button with no change there.
 ---
 
@@ -10647,7 +10664,7 @@ python manage.py runserver
 ```
 
 ```bash
-# Full test suite — 89 files, 2,976 tests (counted 2026-10-01). Always SQLite (see below).
+# Full test suite — 89 files, 2,981 tests (counted 2026-10-01). Always SQLite (see below).
 # ⚠ IT RUNS AFTER A **MAJOR** UPDATE, NOT BEFORE EVERY COMMIT (the owner's call,
 # 2026-09-20) — and "major" is decided by BLAST RADIUS, measured, or the word
 # quietly comes to mean "never". FULL suite: any model, migration, form, signal,
@@ -11158,7 +11175,7 @@ table into the general roster at `/manage/?section=staff`. Only
 
 # Testing conventions
 
-Tests live in `workshop/tests/` and `inventory/` — **89 files, 2,976 tests**,
+Tests live in `workshop/tests/` and `inventory/` — **89 files, 2,981 tests**,
 re-counted 2026-10-01. (`workshop/tests/` is 83 `test_*.py` plus `tests.py`;
 `inventory/` is 5, one of which is `tests_suppliers.py` and so is missed by a
 `test_*.py` glob — which is why the two halves used to be written down wrong.)

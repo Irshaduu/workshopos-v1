@@ -2350,7 +2350,7 @@ grey".
                                                 {% endcomment %}
                                                 {% if s_form.errors %}<div class="text-danger" style="font-size: 0.72rem;">{% for field in s_form %}{% for error in field.errors %}{{ field.label }}: {{ error }} {% endfor %}{% endfor %}{% for error in s_form.non_field_errors %}{{ error }} {% endfor %}</div>{% endif %}
                                             </div>
-                                            {% if s_form.instance.pk and s_form.instance.shop_id %}
+                                            {% if can_move_unassigned and s_form.instance.pk and s_form.instance.shop_id %}
                                             <div class="dropdown">
                                                 <button class="btn btn-link text-muted p-0 border-0 text-decoration-none shadow-none" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                                                     <i class="bi bi-three-dots-vertical" style="font-size: 1.1rem;"></i>
@@ -2562,7 +2562,7 @@ is now true, and the column width is unchanged at every breakpoint.
 
 <!-- UNASSIGN FORMS (Outside main form) -->
 {% for s_form in spare_formset %}
-    {% if s_form.instance.pk and s_form.instance.shop_id %}
+    {% if can_move_unassigned and s_form.instance.pk and s_form.instance.shop_id %}
     <form id="unassign-form-{{ s_form.instance.pk }}" action="{% url 'spare_shop_unassign_item' s_form.instance.pk %}" method="post" class="d-none">
         {% csrf_token %}
     </form>
@@ -2653,6 +2653,14 @@ is now true, and the column width is unchanged at every breakpoint.
                             {{ spare_formset.empty_form.spare_part_name }}
                             <div class="list-group autocomplete-suggestions"></div>
                         </div>
+                        {% comment %}
+                        Office and Owner only (AUD-0109). The import copies a Hub
+                        row's Shop Price and Transport and deletes the Hub row —
+                        a Floor save pins every price on a new row to blank, so
+                        a Floor import erased what the shop was owed. The view
+                        ignores a Floor import as well; this is the presentation.
+                        {% endcomment %}
+                        {% if can_move_unassigned %}
                         <div class="dropdown">
                             <button class="btn btn-link text-muted p-0 border-0 text-decoration-none shadow-none" type="button" data-bs-toggle="dropdown" aria-expanded="false" tabindex="-1">
                                 <i class="bi bi-three-dots-vertical" style="font-size: 1.1rem;"></i>
@@ -2665,6 +2673,7 @@ is now true, and the column width is unchanged at every breakpoint.
                                 </li>
                             </ul>
                         </div>
+                        {% endif %}
                     </div>
                 </td>
                 {% comment %}
@@ -3264,6 +3273,14 @@ is now true, and the column width is unchanged at every breakpoint.
 {% load static %}
 <script src="{% static 'js/spare_autofill.js' %}?v=6"></script>
 
+{% comment %}
+Moving a part between a car and the Unassigned Hub, in either direction, is
+Office's and an owner's (AUD-0109): `spare_shop_unassign_item` is
+@office_required, and an import by Floor erased the shop's debt. Neither modal
+nor its script is rendered for Floor — the controls that open them are gated
+the same way, and a door Floor can see but not open is worse than none.
+{% endcomment %}
+{% if can_move_unassigned %}
 <!-- UNASSIGN CONFIRMATION MODAL -->
 <div class="modal fade" id="unassignConfirmModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered" style="max-width: 380px;">
@@ -3313,6 +3330,7 @@ is now true, and the column width is unchanged at every breakpoint.
     }
   });
 </script>
+{% endif %}
 
 <!-- DATA LOSS PREVENTION MODAL -->
 <div class="modal fade" id="dataLossWarningModal" tabindex="-1" aria-hidden="true">
@@ -3329,7 +3347,7 @@ is now true, and the column width is unchanged at every breakpoint.
         <div class="text-start" style="background: rgba(245, 158, 11, 0.1); padding: 12px; border-radius: 8px; border-left: 4px solid #f59e0b;">
           <strong class="text-dark d-block mb-1">Did you mean to remove this part?</strong>
           <span class="text-muted" style="font-size: 0.85rem;">
-            If you bought this part but no longer need it on this car, <strong>do not clear the name</strong>. Instead, click the <i class="bi bi-three-dots-vertical"></i> menu next to the part and select <strong>"Move to Unassigned"</strong>. This safely removes it from the bill while keeping it in your shop's ledger.
+            {% if can_move_unassigned %}If you bought this part but no longer need it on this car, <strong>do not clear the name</strong>. Instead, click the <i class="bi bi-three-dots-vertical"></i> menu next to the part and select <strong>"Move to Unassigned"</strong>. This safely removes it from the bill while keeping it in your shop's ledger.{% else %}If this part is not needed on this car, <strong>do not clear the name</strong>. Ask the office to move it to Unassigned, so it stays on the shop's ledger.{% endif %}
           </span>
         </div>
         <div class="mt-4">
@@ -3362,6 +3380,7 @@ is now true, and the column width is unchanged at every breakpoint.
   });
 </script>
 
+{% if can_move_unassigned %}
 <!-- IMPORT UNASSIGNED MODAL -->
 <div class="modal fade" id="importUnassignedModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -3507,6 +3526,7 @@ is now true, and the column width is unchanged at every breakpoint.
     setTimeout(() => { targetSpareRow.style.backgroundColor = ''; }, 1000);
   }
 </script>
+{% endif %}
 
 {% comment %}
 ================================================================================

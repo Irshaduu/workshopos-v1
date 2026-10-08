@@ -1,0 +1,521 @@
+{% extends 'workshop/base.html' %}
+{% load custom_filters %}
+
+{% block title %}{{ card.bill_number }}{% endblock %}
+
+{% block content %}
+{% comment %}
+==========================================================================
+THE WARRANTY CARD — the page a claim is worked on (2026-10-05)
+==========================================================================
+A warranty card is a job card underneath (`kind=WARRANTY`), but this page
+carries only what a claim needs, top to bottom:
+
+  * the header — WR number, the car, the bill it is FOR and how old that bill
+    is, the Slip (Office and Owner) and a ⋮;
+  * Today — this visit's date, mileage and mechanic (and the make and model,
+    only while the earlier bill left them blank);
+  * Complaint — what the customer reported, each marked fixed as work goes on;
+  * Claimed part — ONE CLAIM IS ONE PART (2026-10-07): the part from the
+    earlier bill, as the JOB CARD'S OWN SPARE ROW (2026-10-08) — Part Name ·
+    Qty · Status · Shop · Dates · Shop Price · Transport, no customer price —
+    inside the warranty card's colour. The Shop Price is the shop's answer
+    (blank waiting, 0 free, an amount paid). Nothing is added or removed here — a wrong claim is cancelled from
+    the ⋮, and anything not from the earlier bill goes on a job card and is
+    billed. The rare replacement taken from Unassigned Spares is filled into
+    this one row from a quiet link under it;
+  * Work done, then photos and a note.
+
+No customer box, no customer price, no labour charge — the customer pays
+nothing, and `JobCard.save()` holds that whatever is posted. Every link that
+opens a warranty card lands here through `jobcard_edit`'s redirect.
+
+The Complaint and Work done rows are the job card's own machinery (script.js:
+`addFormRow` and the suggestions), so those two lists keep the job card's ids.
+==========================================================================
+{% endcomment %}
+<style>
+    .wc-page { max-width: 760px; }
+
+    .wc-head {
+        background: var(--wr-tint);
+        border: 1px solid var(--wr-line);
+        border-radius: 14px;
+        padding: 12px 14px;
+        margin-bottom: 14px;
+    }
+    .wc-head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .wc-id { min-width: 0; }
+    .wc-no {
+        display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px;
+        margin: 0; font-size: 1.25rem; font-weight: 800;
+        color: var(--color-text); font-variant-numeric: tabular-nums;
+    }
+    .wc-no i { color: var(--wr-ink); font-size: 1.1rem; }
+    .wc-state {
+        font-size: .7rem; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+        background: #fff; border: 1px solid var(--color-border); color: var(--color-text-muted);
+    }
+    .wc-state-hold { color: #b91c1c; border-color: #fecaca; }
+    .wc-car { margin: 4px 0 0; font-weight: 600; color: var(--color-text); overflow-wrap: anywhere; }
+    .wc-claim {
+        display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px;
+        margin: 6px 0 0; font-weight: 800; color: var(--color-text); overflow-wrap: anywhere;
+    }
+    .wc-round {
+        font-size: .7rem; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+        background: var(--wr-ink); color: #fff;
+    }
+    .wc-for { margin: 2px 0 0; font-size: .85rem; color: var(--wr-ink-deep); }
+    .wc-for a { color: var(--wr-ink-deep); font-weight: 700; }
+    .wc-acts { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .wc-btn, .wc-dots {
+        display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+        height: 36px; border-radius: 10px; border: 1px solid var(--wr-line);
+        background: #fff; font-weight: 700; font-size: .82rem; text-decoration: none;
+    }
+    .wc-btn { padding: 0 12px; color: var(--wr-ink); }
+    .wc-dots { width: 36px; padding: 0; color: var(--color-text-muted); }
+    .wc-menu { display: flex; line-height: 0; }
+    .wc-menu .dropdown-menu { line-height: 1.5; max-width: 260px; }
+    .wc-menu .dropdown-item { min-height: 44px; display: flex; align-items: center; white-space: normal; }
+    .wc-cancel-off { flex-wrap: wrap; }
+    .wc-cancel-off small { flex-basis: 100%; padding-left: 1.5rem; font-size: .74rem; color: var(--color-text-muted); }
+    .wc-km { margin-top: 3px; font-size: .74rem; font-weight: 600; color: var(--wr-ink-deep); }
+    @media (hover: none) {
+        .wc-btn, .wc-dots { height: 44px; }
+        .wc-dots { width: 44px; }
+    }
+
+    .wc-errors {
+        border: 1px solid #fecaca; background: #fef2f2; color: #991b1b;
+        border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; font-size: .85rem;
+    }
+    .wc-errors-title { font-weight: 800; margin-bottom: 4px; }
+    .wc-errors ul { margin: 0; padding-left: 18px; }
+
+    .wc-sec {
+        background: #fff; border: 1px solid var(--color-border);
+        border-radius: 14px; padding: 12px 14px; margin-bottom: 12px;
+    }
+    .wc-sec-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+    .wc-h {
+        display: flex; align-items: center; gap: 7px; margin: 0;
+        font-size: .76rem; font-weight: 800; letter-spacing: .05em;
+        text-transform: uppercase; color: var(--color-text-muted);
+    }
+    .wc-h i { color: var(--wr-ink); font-size: .95rem; }
+    .wc-sec > .wc-h { margin-bottom: 8px; }
+    .wc-add {
+        display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+        height: 34px; padding: 0 12px; border-radius: 999px;
+        border: 1px solid var(--wr-line); background: var(--wr-tint);
+        color: var(--wr-ink); font-weight: 700; font-size: .8rem;
+    }
+    @media (hover: none) { .wc-add { height: 44px; } }
+
+    .wc-grid { display: grid; gap: 10px; }
+    .wc-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .wc-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 10px; }
+    @media (max-width: 575.98px) {
+        .wc-grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .wc-grid-3 > :last-child { grid-column: 1 / -1; }
+    }
+    .wc-field { min-width: 0; }
+    .wc-field > label { display: block; font-size: .72rem; font-weight: 600; color: var(--color-text-muted); margin-bottom: 3px; }
+
+    .wc-list { display: flex; flex-direction: column; gap: 8px; }
+    .wc-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+    .wc-row-main { flex: 1 1 200px; min-width: 0; }
+    .wc-row-side { flex: 0 0 130px; }
+
+    /* THE CLAIMED PART — the job card's spare table, inside the warranty
+       card's own frame (the teal edge and heading). The boxes inside are the
+       job card's widgets, so they look and behave as they do there. */
+    .wc-sec-claim { border-color: var(--wr-line); }
+    .wc-sec-claim .wc-h { color: var(--wr-ink-deep); }
+    .wc-claim-table { margin: 0 -4px; }
+    .wc-claim-table thead th {
+        font-size: .68rem; font-weight: 700; letter-spacing: .04em;
+        color: var(--color-text-muted); white-space: nowrap; padding: 6px 8px;
+    }
+    .wc-claim-table td { padding: 8px; vertical-align: middle; }
+    .wc-claim-table .col-part { min-width: 150px; }
+    .wc-claim-table .col-qty { min-width: 70px; width: 70px; }
+    .wc-claim-table .col-qty input { text-align: center; }
+    .wc-claim-table .col-status { min-width: 112px; }
+    .wc-claim-table .col-shop { min-width: 150px; }
+    .wc-claim-table .col-dates { min-width: 132px; }
+    .wc-claim-table .col-price { min-width: 104px; }
+    .wc-claim-table .jc-row-invalid > td { background: #fef2f2; }
+    .wc-part-name { font-weight: 700; overflow-wrap: anywhere; }
+    .wc-part-note { font-size: .74rem; color: var(--color-text-muted); }
+    .wc-part-note[hidden] { display: none; }
+    .wc-part {
+        border: 1px solid var(--color-border); border-radius: 12px; padding: 10px;
+    }
+    .wc-part-top { display: flex; gap: 10px; align-items: center; }
+    .wc-part-top .wc-part-name { flex: 1 1 auto; min-width: 0; }
+    .wc-part-sub { display: block; font-size: .76rem; font-weight: 600; color: var(--color-text-muted); }
+    .wc-part-qty {
+        flex: 0 0 auto; display: flex; align-items: center; gap: 6px; margin: 0;
+        font-size: .76rem; font-weight: 600; color: var(--color-text-muted);
+    }
+    .wc-part-qty input { width: 64px; text-align: center; }
+    .wc-photos { margin-bottom: 10px; }
+    .wc-hub-link {
+        display: inline-flex; align-items: center; gap: 6px; margin-top: 8px;
+        padding: 4px 0; border: 0; background: none;
+        font-size: .78rem; font-weight: 600; color: var(--color-text-muted);
+    }
+    .wc-hub-link:hover { color: var(--wr-ink); }
+    .wc-hub-row {
+        display: flex; align-items: center; gap: 10px; padding: 10px 0;
+        border-bottom: 1px solid var(--color-border);
+    }
+    .wc-hub-row:last-child { border-bottom: 0; }
+    .wc-hub-what { flex: 1 1 auto; min-width: 0; }
+    .wc-hub-what small { display: block; color: var(--color-text-muted); }
+
+    .wc-err { width: 100%; color: #b91c1c; font-size: .75rem; margin-top: 3px; }
+    .wc-bad { border-color: #fca5a5; background: #fef2f2; }
+    .wc-row.wc-bad { border: 1px solid #fca5a5; border-radius: 10px; padding: 6px; }
+
+    .wc-save {
+        width: 100%; height: 52px; margin: 4px 0 40px; border: 0; border-radius: 14px;
+        background: var(--wr-ink); color: #fff; font-weight: 800; font-size: 1.05rem;
+    }
+    .wc-save:active { transform: scale(.99); }
+    @media (hover: hover) { .wc-save:hover { background: var(--wr-ink-deep); } }
+</style>
+
+<div class="wc-page">
+    <a href="{{ back_url }}" class="pg-back">
+        <i class="bi bi-arrow-left"></i><span>{{ back_label }}</span>
+    </a>
+
+    <header class="wc-head">
+        <div class="wc-head-row">
+            <div class="wc-id">
+                <h1 class="wc-no"><i class="bi bi-shield-check" aria-hidden="true"></i>{{ card.bill_number }}{% if card.completed %}<span class="wc-state">Completed {{ card.completed_date|date:"j M" }}</span>{% elif card.on_hold %}<span class="wc-state wc-state-hold">On hold</span>{% endif %}</h1>
+                <p class="wc-car">{% if card.brand_name or card.model_name %}{{ card.brand_name }} {{ card.model_name }} · {% endif %}{{ card.registration_number }}</p>
+                <p class="wc-claim">{{ claimed.spare_part_name }}{% if claim_label %}<span class="wc-round">{{ claim_label }}</span>{% endif %}</p>
+                {% comment %} The age is the WARRANTY CLOCK's — `first`, the bill the part was first fitted on. A first claim is FOR that bill, so its date and age follow it: "For JB-26-005 · 1 Sep 2026 · 1 month 7 days". A repeat claim is for an earlier warranty card, whose date is a claim day, not the clock — so the clock is its own line, worded as on the car's warranty page: "First fitted JB-26-043 · 8 months 26 days". {% endcomment %}
+                <p class="wc-for">For {% if is_office and earlier %}<a href="{{ earlier.url }}?back={{ request.get_full_path|urlencode }}">{{ card.warranty_for }}</a>{% else %}{{ card.warranty_for }}{% endif %}{% if first and first.number == card.warranty_for %} · {{ first.date|date:"j M Y" }}{% if first_age %} · {{ first_age }}{% endif %}{% endif %}</p>
+                {% if first and first.number != card.warranty_for %}<p class="wc-for">First fitted {% if is_office %}<a href="{{ first.url }}?back={{ request.get_full_path|urlencode }}">{{ first.number }}</a>{% else %}{{ first.number }}{% endif %}{% if first_age %} · {{ first_age }}{% endif %}</p>{% endif %}
+            </div>
+            {% if is_office %}
+            <div class="wc-acts">
+                <a class="wc-btn" href="{% url 'warranty_slip' card.pk %}?back={{ request.get_full_path|urlencode }}"><i class="bi bi-file-earmark-text" aria-hidden="true"></i><span>Slip</span></a>
+                <div class="dropdown wc-menu">
+                    <button class="wc-dots" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="More" title="More"><i class="bi bi-three-dots-vertical" aria-hidden="true"></i></button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                        <li><a class="dropdown-item" href="{% url 'car_profile_detail' card.registration_number %}"><i class="bi bi-car-front me-2" aria-hidden="true"></i>Car profile</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        {% if cancel_refusal %}
+                        <li><span class="dropdown-item disabled wc-cancel-off"><i class="bi bi-x-circle me-2" aria-hidden="true"></i>Cancel claim<small>{{ cancel_refusal }}</small></span></li>
+                        {% else %}
+                        <li><button type="submit" form="wcCancel" class="dropdown-item text-danger"><i class="bi bi-x-circle me-2" aria-hidden="true"></i>Cancel claim</button></li>
+                        {% endif %}
+                    </ul>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </header>
+
+    {% comment %} CANCEL CLAIM's own form — outside the card's form, posted by the ⋮ item, and asking first. Removes the card and its parts; a part off the shelf goes back on it. {% endcomment %}
+    {% if is_office and not cancel_refusal %}
+    <form id="wcCancel" method="post" action="{% url 'warranty_cancel' card.pk %}" class="d-none"
+          data-confirm="{{ card.bill_number }} and everything on it will be removed — for a claim opened by mistake. The part can then be claimed again."
+          data-confirm-title="Cancel this claim?"
+          data-confirm-icon="bi-x-circle"
+          data-confirm-theme="danger"
+          data-confirm-ok="Cancel claim"
+          data-confirm-no="Keep it">{% csrf_token %}</form>
+    {% endif %}
+
+    {% if problems %}
+    <div class="wc-errors" id="wcErrors" tabindex="-1">
+        <div class="wc-errors-title">Not saved — {{ problems|length }} thing{{ problems|length|pluralize }} to fix</div>
+        <ul>{% for where, what in problems %}<li><b>{{ where }}</b> — {{ what }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    <form method="post" id="wcForm" autocomplete="off"{% if next_url %} action="?next={{ next_url }}"{% endif %}>
+        {% csrf_token %}
+
+        <section class="wc-sec" aria-labelledby="wcToday">
+            <h2 class="wc-h" id="wcToday"><i class="bi bi-calendar-check" aria-hidden="true"></i>Today</h2>
+            {% if ask_car %}
+            {% comment %} Only for a car whose earlier bill carried no make or model — see `WarrantyCardForm`. {% endcomment %}
+            <div class="wc-grid wc-grid-2">
+                {% if form.brand_name %}<div class="wc-field"><label for="{{ form.brand_name.id_for_label }}">Make</label>{{ form.brand_name }}<div class="list-group autocomplete-suggestions"></div>{% if form.brand_name.errors %}<div class="wc-err">{{ form.brand_name.errors.0 }}</div>{% endif %}</div>{% endif %}
+                {% if form.model_name %}<div class="wc-field"><label for="{{ form.model_name.id_for_label }}">Model</label>{{ form.model_name }}<div class="list-group autocomplete-suggestions"></div>{% if form.model_name.errors %}<div class="wc-err">{{ form.model_name.errors.0 }}</div>{% endif %}</div>{% endif %}
+            </div>
+            {% endif %}
+            <div class="wc-grid wc-grid-3">
+                <div class="wc-field"><label for="{{ form.admitted_date.id_for_label }}">Date</label>{{ form.admitted_date }}{% if form.admitted_date.errors %}<div class="wc-err">{{ form.admitted_date.errors.0 }}</div>{% endif %}</div>
+                <div class="wc-field"><label for="{{ form.mileage.id_for_label }}">Mileage</label>{{ form.mileage }}{% if form.mileage.errors %}<div class="wc-err">{{ form.mileage.errors.0 }}</div>{% elif km_since is not None %}<div class="wc-km">{{ km_since|inr }} km since {{ first.number }}</div>{% endif %}</div>
+                <div class="wc-field"><label for="{{ form.lead_mechanic.id_for_label }}">Mechanic</label>{{ form.lead_mechanic }}{% if form.lead_mechanic.errors %}<div class="wc-err">{{ form.lead_mechanic.errors.0 }}</div>{% endif %}</div>
+            </div>
+        </section>
+
+        <section class="wc-sec" aria-labelledby="wcComplaint">
+            <div class="wc-sec-head">
+                <h2 class="wc-h" id="wcComplaint"><i class="bi bi-chat-left-text" aria-hidden="true"></i>Complaint</h2>
+                <button type="button" class="wc-add" id="add-concern-btn" aria-label="Add a complaint"><i class="bi bi-plus-lg" aria-hidden="true"></i><span>Add</span></button>
+            </div>
+            {{ concern_formset.management_form }}
+            <div id="concern-list" class="wc-list">
+                {% for c in concern_formset %}
+                <div class="wc-row{% if c.errors %} wc-bad{% endif %}">
+                    {{ c.id }}<div class="d-none">{{ c.DELETE }}</div>
+                    <div class="wc-row-main">{{ c.concern_text }}<div class="list-group autocomplete-suggestions"></div></div>
+                    <div class="wc-row-side">{{ c.status }}</div>
+                    {% if c.errors %}<div class="wc-err">{% for field in c %}{% for error in field.errors %}{{ error }} {% endfor %}{% endfor %}</div>{% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="wc-sec wc-sec-claim" aria-labelledby="wcParts" data-job-part="{% if claimed.source == 'INVENTORY' and claimed.item %}{{ claimed.item.category.name }}{% else %}{{ claimed.spare_part_name }}{% endif %}">
+            <h2 class="wc-h" id="wcParts"><i class="bi bi-gear-wide-connected" aria-hidden="true"></i>Claimed part</h2>
+            {{ part_formset.management_form }}{{ stock_formset.management_form }}
+            {% if part_formset.forms %}
+            <div class="table-responsive wc-claim-table">
+                <table class="table table-borderless align-middle mb-0">
+                    <thead><tr class="border-bottom">
+                        <th class="col-part">Part Name</th>
+                        <th class="col-qty text-center">Qty</th>
+                        <th class="col-status">Status</th>
+                        {% if photos_configured %}<th class="col-photo text-center" scope="col" aria-label="Photos" title="Photos"><i class="bi bi-camera"></i></th>{% endif %}
+                        {% if is_office %}<th class="col-shop">Shop</th>{% endif %}
+                        <th class="col-dates">Dates</th>
+                        {% if is_office %}<th class="col-price">Shop Price (₹)</th><th class="col-price">Transport (₹)</th>{% endif %}
+                    </tr></thead>
+                    <tbody id="spare-list">
+                        {% for p in part_formset %}{% include "workshop/warranty/_warranty_part_row.html" with p=p %}{% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if unassigned_spares %}<button type="button" class="wc-hub-link" data-bs-toggle="modal" data-bs-target="#wcHubModal"><i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>Took the replacement from Unassigned Spares?</button>{% endif %}
+            {% else %}
+            <div class="wc-list">{% for s in stock_formset %}{% include "workshop/warranty/_warranty_stock_row.html" with s=s %}{% endfor %}</div>
+            {% endif %}
+        </section>
+
+        <section class="wc-sec" aria-labelledby="wcWork">
+            <div class="wc-sec-head">
+                <h2 class="wc-h" id="wcWork"><i class="bi bi-tools" aria-hidden="true"></i>Work done</h2>
+                <button type="button" class="wc-add" id="add-labour-btn" aria-label="Add work done"><i class="bi bi-plus-lg" aria-hidden="true"></i><span>Add</span></button>
+            </div>
+            {{ labour_formset.management_form }}
+            <div id="labour-list" class="wc-list">
+                {% for l in labour_formset %}
+                <div class="wc-row{% if l.errors %} wc-bad{% endif %}">
+                    {{ l.id }}<div class="d-none">{{ l.DELETE }}</div>
+                    <div class="wc-row-main">{{ l.job_description }}</div>
+                    {% if l.errors %}<div class="wc-err">{% for field in l %}{% for error in field.errors %}{{ error }} {% endfor %}{% endfor %}</div>{% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% comment %} The job boxes' suggestions — "<part> replaced" for the claimed part (the script below). {% endcomment %}
+            <datalist id="jobLineOptions"></datalist>
+        </section>
+
+        <section class="wc-sec" aria-labelledby="wcNote">
+            <h2 class="wc-h" id="wcNote"><i class="bi bi-sticky" aria-hidden="true"></i>{% if photos_configured %}Photos and note{% else %}Note{% endif %}</h2>
+            {% comment %} The car's photo box — the job card's own include, without the "Photos" caption the section heading already says. A warranty card is never settled, so photos can always be added. {% endcomment %}
+            {% if photos_configured and photo_subject_id %}
+            <div class="photo-box-row wc-photos">
+                {% include "workshop/includes/_photo_box.html" %}
+                <p class="photo-box-hint">{% if photo_count %}Tap to view or add.{% else %}Tap to open the camera.{% endif %}</p>
+            </div>
+            {% endif %}
+            <label for="{{ form.notes.id_for_label }}" class="visually-hidden">Note</label>
+            {{ form.notes }}
+            {% if form.notes.errors %}<div class="wc-err">{{ form.notes.errors.0 }}</div>{% endif %}
+        </section>
+
+        <button type="submit" class="wc-save"><i class="bi bi-save me-1" aria-hidden="true"></i>Save</button>
+    </form>
+</div>
+
+{% comment %} The "+ Add" templates for Complaint and Work done — outside the form, so they never post. {% endcomment %}
+<div id="empty-concern-form" class="d-none">
+    <div class="wc-row">
+        {{ concern_formset.empty_form.id }}<div class="d-none">{{ concern_formset.empty_form.DELETE }}</div>
+        <div class="wc-row-main">{{ concern_formset.empty_form.concern_text }}<div class="list-group autocomplete-suggestions"></div></div>
+        <div class="wc-row-side">{{ concern_formset.empty_form.status }}</div>
+    </div>
+</div>
+<div id="empty-labour-form" class="d-none">
+    <div class="wc-row">
+        {{ labour_formset.empty_form.id }}<div class="d-none">{{ labour_formset.empty_form.DELETE }}</div>
+        <div class="wc-row-main">{{ labour_formset.empty_form.job_description }}</div>
+    </div>
+</div>
+
+{% if unassigned_spares %}
+{% comment %}
+THE RARE CASE — the replacement came off the Unassigned Spares shelf (a part
+bought earlier for another car). Picking one fills the claimed part's shop,
+Shop Price, Transport and dates from it and posts its id as
+`imported_unassigned_ids`, so saving removes it from the Hub — the job card's
+own import, read by `_after_parts_saved`. Nothing happens until Save.
+{% endcomment %}
+<div class="modal fade" id="wcHubModal" tabindex="-1" aria-labelledby="wcHubTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width: 460px;">
+        <div class="modal-content" style="border-radius: 16px;">
+            <div class="modal-header">
+                <h2 class="modal-title fs-6 fw-bold" id="wcHubTitle">From Unassigned Spares</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                {% for hub in unassigned_spares %}
+                <div class="wc-hub-row">
+                    <div class="wc-hub-what">
+                        <b>{{ hub.spare_part_name|default:"Unnamed part" }}</b>
+                        <small>{{ hub.shop.name }}{% if hub.unit_price is not None %} · ₹{{ hub.unit_price|inr }}{% endif %}{% if hub.received_date %} · arrived {{ hub.received_date|date:"j M" }}{% endif %}</small>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-hub-use="{{ hub.pk }}"
+                            data-shop="{{ hub.shop_id }}" data-price="{% if hub.unit_price is not None %}{{ hub.unit_price|stringformat:'s' }}{% endif %}"
+                            data-transport="{% if hub.transport_cost is not None %}{{ hub.transport_cost|stringformat:'s' }}{% endif %}"
+                            data-ordered="{{ hub.ordered_date|date:'Y-m-d' }}" data-received="{{ hub.received_date|date:'Y-m-d' }}">Use</button>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if photos_configured %}
+{% include "workshop/includes/_photo_overlays.html" %}
+{% endif %}
+
+{% include "workshop/includes/_date_chip.html" %}
+{% load static %}
+<script src="{% static 'js/spare_autofill.js' %}?v=6"></script>
+
+<script>
+(function () {
+    'use strict';
+    var form = document.getElementById('wcForm');
+    if (!form) return;
+
+    // A blank row is not a row — decided afresh on EVERY submit, never
+    // latched, because a submit can be refused after this runs (the job
+    // card's rule). A row its ✕ removed stays removed.
+    function sweep(rows, isBlank) {
+        document.querySelectorAll(rows).forEach(function (row) {
+            var box = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
+            if (box) box.checked = row.dataset.removed === '1' || isBlank(row);
+        });
+    }
+    function val(row, selector) {
+        var field = row.querySelector(selector);
+        return field ? field.value.trim() : '';
+    }
+    form.addEventListener('submit', function () {
+        sweep('#concern-list > .wc-row', function (row) { return !val(row, 'input[name$="-concern_text"]'); });
+        sweep('#labour-list > .wc-row', function (row) { return !val(row, 'input[name$="-job_description"]'); });
+        dirty = false;
+    });
+
+    // A row added by "+ Add" is brought into view with its first box ready.
+    // Deferred, so script.js's own click handler has added the row first.
+    ['add-concern-btn', 'add-labour-btn'].forEach(function (id) {
+        var button = document.getElementById(id);
+        if (!button) return;
+        button.addEventListener('click', function () {
+            setTimeout(function () {
+                var list = button.closest('.wc-sec').querySelector('.wc-list');
+                var row = list && list.lastElementChild;
+                if (!row) return;
+                row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                var first = row.querySelector('input[type="text"], input:not([type]), select');
+                if (first) first.focus({ preventScroll: true });
+            }, 0);
+        });
+    });
+
+    // "<part> replaced" for the claimed part, offered in the job boxes. A
+    // stock part by its TYPE ("Oil Filter"), never its brand — the name the
+    // slip prints it under, so the two lines cannot disagree.
+    var jobList = document.getElementById('jobLineOptions');
+    var jobPart = (form.querySelector('[data-job-part]') || {}).dataset;
+    if (jobList && jobPart && jobPart.jobPart && jobPart.jobPart.trim()) {
+        var option = document.createElement('option');
+        option.value = jobPart.jobPart.trim() + ' replaced';
+        jobList.appendChild(option);
+    }
+
+    // The Status box wears the job card's status colours (style.css).
+    function paintStatus(select) {
+        var value = (select.value || '').toUpperCase();
+        select.classList.remove('status-pending', 'status-ordered', 'status-fixed');
+        select.classList.add(value === 'RECEIVED' ? 'status-fixed'
+                             : value === 'ORDERED' ? 'status-ordered' : 'status-pending');
+    }
+    form.querySelectorAll('#spare-list select[name$="-status"]').forEach(paintStatus);
+    document.addEventListener('change', function (e) {
+        if (e.target.matches && e.target.matches('#spare-list select[name$="-status"]')) paintStatus(e.target);
+    });
+
+    // The rare Hub pick: fill the claimed part from the chosen Hub row, and
+    // say so on the row. Saving is what moves it — `imported_unassigned_ids`.
+    document.addEventListener('click', function (e) {
+        var use = e.target.closest && e.target.closest('[data-hub-use]');
+        if (!use) return;
+        var row = form.querySelector('#spare-list .spare-row');
+        if (!row) return;
+        function set(selector, value) {
+            var box = row.querySelector(selector);
+            if (box) box.value = value || '';
+        }
+        set('select[name$="-shop_name"]', use.dataset.shop);
+        set('input[name$="-unit_price"]', use.dataset.price);
+        set('input[name$="-transport_cost"]', use.dataset.transport);
+        set('input[name$="-ordered_date"]', use.dataset.ordered || use.dataset.received);
+        set('input[name$="-received_date"]', use.dataset.received);
+        var received = row.querySelector('input[name$="-received_date"]');
+        if (received) received.dispatchEvent(new Event('change', { bubbles: true }));
+        var hidden = form.querySelector('input[name="imported_unassigned_ids"]');
+        if (!hidden) {
+            hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = 'imported_unassigned_ids';
+            form.appendChild(hidden);
+        }
+        hidden.value = use.dataset.hubUse;
+        var note = row.querySelector('.wc-hub-note');
+        if (note) note.hidden = false;
+        if (window.refreshDateChips) window.refreshDateChips();
+        dirty = true;
+        var modal = bootstrap.Modal.getInstance(document.getElementById('wcHubModal'));
+        if (modal) modal.hide();
+    });
+
+    // Unsaved work is warned about before the page is left.
+    var dirty = false;
+    form.addEventListener('input', function () { dirty = true; });
+    form.addEventListener('change', function () { dirty = true; });
+    window.addEventListener('beforeunload', function (e) {
+        if (!dirty) return;
+        e.preventDefault();
+        e.returnValue = '';
+    });
+
+    // A refused save: put the summary in front of the reader.
+    var errors = document.getElementById('wcErrors');
+    if (errors) {
+        window.addEventListener('load', function () {
+            errors.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            errors.focus({ preventScroll: true });
+        });
+    }
+}());
+</script>
+{% endblock %}

@@ -3,7 +3,9 @@ What a CUSTOMER DOCUMENT prints — one module, no views, no HTTP.
 
 Two documents leave this workshop: the INVOICE for work that was done, and the
 ESTIMATE for work being quoted. `build_invoice()` and `build_estimate()` are the
-whole public surface, and they live in one file on purpose.
+whole public surface, and they live in one file on purpose. (A third, the
+WARRANTY SLIP — free work because of an earlier bill — is `build_warranty_slip`,
+here for the same reason: what a customer is handed is decided in one place.)
 
 Same shape as `analysis_engine.py` and `master_data.py`: the rule lives in one
 importable place so a second screen (a PDF export, a WhatsApp share, a reprint
@@ -398,6 +400,50 @@ def build_invoice(jobcard):
         # The DATE the sheet prints. Read from here rather than from the job
         # card by the template, because an old bill's date is not an admitted
         # date — it is the one date its paper carries.
+        'date': jobcard.admitted_date,
+    }
+
+
+def build_warranty_slip(jobcard, for_number='', for_date=None):
+    """
+    The WARRANTY SLIP — the paper for a warranty card, handed over with the
+    car: what was done and what was fitted, free, because of an earlier bill.
+
+    A third document, not a ₹0 invoice. A bill that totals ₹0 reads as a bill
+    somebody forgot to price, and the customer is the one who reads it; this
+    says what it is in its title and closes on "WARRANTY · NO CHARGE".
+
+    NO PRICES ANYWHERE, not even ₹0. The warranty card's customer side is ₹0
+    by the server's rule, and its cost side (what the shop charged) is the
+    workshop's own business. So there is no AMOUNT column, no UNIT PRICE and
+    no subtotal — only the work, the parts and how many of each.
+
+    THE QUANTITY ALWAYS PRINTS, blank counted as one. On a bill QTY is the
+    breakdown of an amount and one has no breakdown, so the bill hides it; here
+    there is no amount, the quantity is the only figure a part has, and a
+    column that is blank on most rows would read as missing data.
+
+    Part names follow the bill's rule (`part_display_name`): a warehouse draw
+    is named by its category, never its branded product. The earlier bill's
+    number and date are handed in by the caller — this module reads one record
+    and never looks another up.
+    """
+    job_lines = [JobLine(description=labour.job_description or '')
+                 for labour in jobcard.labours.all()]
+    part_lines = []
+    for spare in jobcard.spares.all():
+        quantity = effective_quantity(spare.quantity)
+        part_lines.append(PartLine(
+            name=part_display_name(spare), quantity=quantity,
+            display_quantity=quantity, unit_price=None, amount=None))
+    return {
+        'job_lines': job_lines,
+        'job_pad': range(max(0, MIN_JOB_ROWS - len(job_lines))),
+        'part_lines': part_lines,
+        'part_pad': range(max(0, MIN_PART_ROWS - len(part_lines))),
+        'for_number': for_number or '',
+        'for_date': for_date,
+        'document_title': document_title(jobcard, jobcard.bill_number, 'Warranty'),
         'date': jobcard.admitted_date,
     }
 

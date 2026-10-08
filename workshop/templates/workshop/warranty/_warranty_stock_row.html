@@ -1,0 +1,15 @@
+{% comment %}
+THE CLAIMED PART, when it came off the workshop's own shelf — a stock part on
+the earlier bill failed and is replaced from stock (the usual way for a
+Supplies Shop part). The product is the bill's and fixed: printed, never a
+box. Only how many may change, and never above the bill's
+(`WarrantyStockForm`). Opened with the card, gone with it — no ✕, no "+ Add".
+{% endcomment %}
+<div class="wc-part{% if s.errors %} wc-bad{% endif %}">
+    {{ s.id }}
+    <div class="wc-part-top">
+        <div class="wc-part-name">{{ s.instance.spare_part_name|default:s.instance.item.name }}<span class="wc-part-sub">From our stock{% if s.part_category %} · {{ s.part_category }}{% endif %}</span></div>
+        <label class="wc-part-qty"><span>Qty</span>{{ s.quantity }}</label>
+    </div>
+    {% if s.errors %}<div class="wc-err">{% for field in s %}{% for error in field.errors %}{{ error }} {% endfor %}{% endfor %}{% for error in s.non_field_errors %}{{ error }} {% endfor %}</div>{% endif %}
+</div>

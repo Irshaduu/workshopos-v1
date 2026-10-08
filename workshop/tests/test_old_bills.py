@@ -84,6 +84,11 @@ class OldBillsAreConnectedToNothingTests(TestCase):
         'workshop/known_car.py',
         'workshop/master_data.py',
         'workshop/management/commands/purge_business_data.py',
+        # A warranty card may be opened against an Excel-era bill (the owners'
+        # decision, 2026-10-02). It READS the bill's number, car and parts to
+        # offer it, and stores only the number on the warranty card — nothing
+        # is written to the old bill and no money moves.
+        'workshop/warranty.py',
     }
 
     # Class names and the table name. Deliberately NOT "old_bill": inventory's

@@ -179,7 +179,7 @@ from .models import (
     SalaryPayment, SalaryPaymentLine, SalaryAdvance,
     SpareShop, SpareShopPayment, SpareShopDiscount, SPARE_SHOP_OWED,
     BulkPayer, BulkPaymentHistory,
-    OwnerWithdrawal, RentRate, RentDeposit, live_cards,
+    OwnerWithdrawal, RentRate, RentDeposit, bill_cards, live_cards,
 )
 # ⚠ THE RENT ARITHMETIC IS NOT RESTATED HERE. `workshop/rent.py` owns the
 # rate spans, the month boundaries and the cap; this module calls it. A second
@@ -540,11 +540,16 @@ def comparison_window(start, end):
 
 def live_jobcards():
     """
-    Every job card that counts as real business.
+    Every job card that counts as real business — the BILLS.
 
-    Which cards count is `models.live_cards()`, and is never restated here.
+    Which cards those are is `models.bill_cards()`, and is never restated here.
+    A warranty card is left out: it bills ₹0 and is never settled, so every
+    figure built on this — turnover, the job counts and averages in Deep
+    Analysis, How Customers Paid, what customers owe — reads the same without
+    it, minus a free card diluting an average or sitting "unsettled" for ever.
+    Its COST still reaches profit, through its parts (`_live_spares`).
     """
-    return JobCard.objects.filter(live_cards())
+    return JobCard.objects.filter(bill_cards())
 
 
 def car_bill_turnover(start, end):

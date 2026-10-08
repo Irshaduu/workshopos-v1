@@ -1,0 +1,296 @@
+{% load custom_filters %}
+{% comment %}
+ONE CAR CARD on the home board — drawn for every job card AND every warranty
+card, so the two groups are one card shape and cannot drift apart. Expects
+`job` (one open card, annotated by the `home` view) and the page's context.
+{% endcomment %}
+    <!-- Define high-performance variables once -->
+    {% with color=job.get_car_color_hex %}
+    <div class="job-card {% if job.on_hold %}on-hold-card{% endif %}" data-card-id="{{ job.pk }}" data-edit-url="{% url 'jobcard_edit' job.pk %}"
+         {# `--card-glow` went with the hover halo. Other pages still declare #}
+         {# their own; this card no longer reads one. #}
+         style="{% if color and job.car_color != 'White' %}--card-shade: {{ color }}14; --stripe-color: {{ color }};{% elif job.car_color == 'White' %}--card-shade: rgba(241, 245, 249, 0.45); --stripe-color: #ffffff;{% else %}--stripe-color: #e2e8f0;{% endif %}">
+
+        <!-- Left stripe — Rendered server-side for instant load -->
+        <div class="card-stripe 
+             {% if not job.car_color %}stripe-unset
+             {% elif job.car_color == 'White' %}stripe-white
+             {% endif %}"
+             style="--stripe-color: {{ color|default:'#e2e8f0' }};">
+        </div>
+
+        <!-- Main Wrapper -->
+        <div class="card-main-wrap">
+            <div class="card-body-inner">
+                <!-- Row 1: Car Name + Status Dot + 3-Dot Menu -->
+                <div class="card-top">
+                    {% comment %}
+                    The dot is part of the name's own text run — see
+                    `.status-dot-sm`. `&nbsp;` rather than a space so it can
+                    never wrap onto a line by itself, and no newline between
+                    the name and it, because Django renders the whitespace and
+                    the template's own indentation would put a second gap in.
+                    {% endcomment %}
+                    <div class="car-name">{{ job.brand_name }} {{ job.model_name }}&nbsp;<span
+                            class="status-dot-sm {% if job.on_hold %}hold{% else %}active{% endif %}"
+                            role="img"
+                            aria-label="{% if job.on_hold %}On hold{% else %}Active{% endif %}"
+                            title="{% if job.on_hold %}On hold{% else %}Active{% endif %}"></span></div>
+                    <div class="d-flex align-items-center">
+                        <!-- 3-dot Menu -->
+                        <div class="dropdown pit-dropdown">
+                            <button class="card-dots" type="button"
+                                    data-bs-toggle="dropdown"
+                                    data-bs-display="static"
+                                    aria-expanded="false" aria-label="Actions">
+                                <i class="bi bi-three-dots-vertical"></i>
+                            </button>
+                            {% comment %}
+                            Two rows, the work first: Mark Completed, then the
+                            hold toggle (the owner's order, 2026-09-29). Both are
+                            Floor's too. There is NO invoice row here any more —
+                            a car on the floor has no final bill, and Office
+                            reaches it from the job card this card opens, whose
+                            header carries Invoice under the same gate.
+
+                            NEITHER ROW ASKS FIRST (the owner's call, 2026-09-29).
+                            Mark Completed carried a "Handing this car over?"
+                            card; it is pressed all day and is undone by Undo
+                            Completion on the Completed list, so the question only
+                            taught people to press through it.
+                            {% endcomment %}
+                            <ul class="dropdown-menu dropdown-menu-end card-menu">
+                                {% if user.is_authenticated %}
+                                <li>
+                                    <form method="post" action="{% url 'mark_completed' job.pk %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <button type="submit" class="dropdown-item card-menu-go">
+                                            <i class="bi bi-check-circle"></i> Mark Completed
+                                        </button>
+                                    </form>
+                                </li>
+                                <li>
+                                    <form method="post" action="{% url 'toggle_hold' job.pk %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <button type="submit"
+                                                class="dropdown-item {% if job.on_hold %}card-menu-go{% else %}card-menu-warn{% endif %}">
+                                            <i class="bi {% if job.on_hold %}bi-play-circle{% else %}bi-pause-circle{% endif %}"></i>
+                                            {% if job.on_hold %}Mark Active{% else %}Put On Hold{% endif %}
+                                        </button>
+                                    </form>
+                                </li>
+                                {% endif %}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Rows 2 & 3 Flex Layout -->
+                <div class="card-mid-grid">
+                    <!-- Left: Row 2 (Reg) + Row 3 (Age & Mechanic) -->
+                    <div class="card-mid-left">
+                        <div class="reg-row">
+                            <span class="reg-badge">{{ job.registration_number }}</span>{% if job.is_warranty %}<span class="wr-badge pit-wr">Warranty</span>{% endif %}
+                        </div>
+                        {% if job.is_warranty %}<div class="pit-wr-part">{{ job.claimed_name }}</div>{% endif %}
+                        <div class="meta-row">
+                            <span class="age-pill">{{ job.age_label|default:'New' }}</span>
+                            <span class="mechanic-tag">
+                                <i class="bi bi-person-gear"></i>
+                                {% if job.lead_mechanic %}{{ job.lead_mechanic.name }}{% else %}Unassigned{% endif %}
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Right: Progress Ratio + Circle % Indicator (Spans Rows 2 & 3) -->
+                    <div class="card-mid-right">
+                        {% if job.total_concerns > 0 %}
+                            {% with p=job.get_completion_percentage %}
+                            <div class="progress-ring-wrap">
+                                {% comment %}
+                                The ratio is a caption on the ring, not a
+                                headline — see `.progress-ratio-num`. It reads
+                                "2/5" and nothing else; the word DONE that used
+                                to sit under it labelled a number that already
+                                says what it is.
+
+                                `aria-label` because on its own "2/5" beside a
+                                percentage is not a sentence anyone hearing the
+                                page would understand.
+                                {% endcomment %}
+                                <span class="progress-ratio-num"
+                                      aria-label="{{ job.fixed_concerns }} of {{ job.total_concerns }} concerns fixed">{{ job.fixed_concerns }}/{{ job.total_concerns }}</span>
+                                {% comment %}
+                                Green at 100, one blue everywhere below it —
+                                see `.progress-ring-svg`. The disc is drawn
+                                FIRST so the track and the arc paint over its
+                                edge; r=16 keeps it inside the 3px stroke, whose
+                                inner edge is at 16.5.
+                                {% endcomment %}
+                                <div class="progress-ring-svg-box">
+                                    <svg class="progress-ring-svg" width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
+                                        <circle class="{% if p == 100 %}disc-done{% else %}disc-going{% endif %}"
+                                                cx="22" cy="22" r="16" stroke="none"></circle>
+                                        <circle class="ring-bg" cx="22" cy="22" r="18" fill="none" stroke-width="3"></circle>
+                                        <circle class="ring-fg {% if p == 100 %}ring-done{% else %}ring-going{% endif %}"
+                                                cx="22" cy="22" r="18" fill="none" stroke-width="3"
+                                                stroke-dasharray="113.1"
+                                                stroke-dashoffset="calc(113.1 - (113.1 * {{ p }} / 100))"
+                                                stroke-linecap="round"
+                                                transform="rotate(-90 22 22)"></circle>
+                                    </svg>
+                                    <span class="ring-text {% if p == 100 %}text-done{% else %}text-going{% endif %}">{{ p }}%</span>
+                                </div>
+                            </div>
+                            {% endwith %}
+                        {% else %}
+                            <span class="no-concerns-badge">Awaiting tasks</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            {% comment %}
+            "View" / "Hide", not "View Live Details" — the owner's instruction.
+            The bar spans the whole card, sits directly under the car it belongs
+            to and carries a chevron that turns; three of those four words were
+            explaining a control that explains itself, on every card in a list
+            of forty-five.
+            {% endcomment %}
+            <button type="button" class="live-drawer-toggle live-drawer-toggle--top" data-target="drawer-{{ job.pk }}"
+                    aria-label="View live details">
+                <i class="bi bi-chevron-down toggle-icon"></i>
+                <span class="toggle-label">View</span>
+            </button>
+
+            {% comment %}
+            Each section is capped at `HOME_SECTION_ROW_CAP` (25) and names its
+            remainder. The heading still reports the TRUE total, so the visible
+            rows plus the "+N more" line always add back up to it — and every
+            hidden row is on the job card this card already opens.
+
+            The cap is applied in the view, never with `|slice` here: a cap in
+            the markup and a remainder computed from a constant are two versions
+            of one rule, free to disagree.
+            {% endcomment %}
+            <div class="card-live-drawer" id="drawer-{{ job.pk }}">
+                <div class="live-drawer-inner">
+                    {% if job.has_any_live_detail %}
+                        <!-- 1. Customer Concerns -->
+                        {% if job.all_concerns %}
+                        <div class="drawer-sec">
+                            <div class="drawer-sec-title">
+                                <i class="bi bi-exclamation-circle text-primary"></i> Customer Concerns ({{ job.concern_total }})
+                            </div>
+                            <div class="drawer-list">
+                                {% for c in job.all_concerns %}
+                                <div class="drawer-item">
+                                    <div class="drawer-item-text">
+                                        {% if c.status == 'FIXED' %}
+                                        <i class="bi bi-check-circle-fill status-icon-fixed"></i>
+                                        {% elif c.status == 'WORKING' %}
+                                        <i class="bi bi-clock-history status-icon-working"></i>
+                                        {% else %}
+                                        <span class="status-icon-pending"></span>
+                                        {% endif %}
+                                        <span>{{ c.concern_text }}</span>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                                {% if job.concerns_more %}
+                                <div class="drawer-more">+{{ job.concerns_more }} more on the job card</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <!-- 2. Job Performed -->
+                        {% if job.all_labours %}
+                        <div class="drawer-sec">
+                            <div class="drawer-sec-title">
+                                <i class="bi bi-tools text-primary"></i> Job Performed ({{ job.labour_total }})
+                            </div>
+                            <div class="drawer-list">
+                                {% for l in job.all_labours %}
+                                <div class="drawer-item">
+                                    <div class="drawer-item-text">
+                                        <i class="bi bi-check-circle-fill status-icon-fixed"></i>
+                                        <span>{{ l.job_description }}</span>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                                {% if job.labours_more %}
+                                <div class="drawer-more">+{{ job.labours_more }} more on the job card</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <!-- 3. Inventory Items -->
+                        {% if job.all_stock %}
+                        <div class="drawer-sec">
+                            <div class="drawer-sec-title">
+                                <i class="bi bi-box-seam text-info"></i> Inventory Items ({{ job.stock_total }})
+                            </div>
+                            <div class="drawer-list">
+                                {% for s in job.all_stock %}
+                                <div class="drawer-item">
+                                    <div class="drawer-item-text">
+                                        <i class="bi bi-check-circle-fill status-icon-fixed"></i>
+                                        <span>{{ s.spare_part_name }}{% if s.quantity|gt:1 %} <span class="text-muted" style="font-size: 0.72rem;">(Qty: {{ s.quantity|clean_qty }})</span>{% endif %}</span>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                                {% if job.stock_more %}
+                                <div class="drawer-more">+{{ job.stock_more }} more on the job card</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <!-- 4. Spare Parts -->
+                        {% if job.all_shop %}
+                        <div class="drawer-sec">
+                            <div class="drawer-sec-title">
+                                <i class="bi bi-gear-wide-connected text-warning"></i> Spare Parts ({{ job.shop_total }})
+                            </div>
+                            <div class="drawer-list">
+                                {% for s in job.all_shop %}
+                                <div class="drawer-item flex-column align-items-start gap-0 py-1">
+                                    <div class="drawer-item-text w-100">
+                                        {% if s.status == 'RECEIVED' %}
+                                        <i class="bi bi-check-circle-fill status-icon-fixed"></i>
+                                        {% elif s.status == 'ORDERED' %}
+                                        <i class="bi bi-clock-history status-icon-working"></i>
+                                        {% else %}
+                                        <span class="status-icon-pending"></span>
+                                        {% endif %}
+                                        <span>{{ s.spare_part_name }}</span>
+                                    </div>
+                                    {% if request.user|has_group:"Office" or request.user|has_group:"Owner" or request.user.is_superuser %}
+                                    <div class="drawer-subtext">
+                                        Shop: {% if s.shop %}{{ s.shop.name }}{% elif s.shop_name %}{{ s.shop_name }}{% else %}Unassigned{% endif %}{% if s.quantity|gt:1 %} • Qty: {{ s.quantity|clean_qty }}{% endif %}
+                                    </div>
+                                    {% elif s.quantity|gt:1 %}
+                                    <div class="drawer-subtext">
+                                        Qty: {{ s.quantity|clean_qty }}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+                                {% if job.shop_more %}
+                                <div class="drawer-more">+{{ job.shop_more }} more on the job card</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                    {% else %}
+                        <div class="drawer-empty">
+                            <i class="bi bi-inbox text-muted"></i> No tasks or spare parts recorded yet.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endwith %}

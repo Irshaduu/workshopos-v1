@@ -247,7 +247,9 @@ see the note in base.html for why the responsive `col-*` classes went.
                         <span class="del-vehicle-name">{{ jobcard.brand_name }} {{ jobcard.model_name }}</span>
                         <div class="del-reg-row">
                             <span class="del-reg">{{ jobcard.registration_number }}</span>
-                            {% if jobcard.payment_status == 'PAID' %}
+                            {% if jobcard.is_warranty %}
+                                <span class="wr-badge">Warranty</span>
+                            {% elif jobcard.payment_status == 'PAID' %}
                                 <span class="del-pay-badge paid">Paid</span>
                             {% elif jobcard.payment_status == 'BULK_PAID' %}
                                 <span class="del-pay-badge fleet">Fleet Paid</span>

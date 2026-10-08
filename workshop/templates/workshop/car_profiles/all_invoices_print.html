@@ -34,6 +34,16 @@
     Anything else that starts growing here belongs in the shared partial or
     nowhere.
 
+    It also draws ONE WARRANTY SLIP on its own (`warranty_slip`), the way it
+    draws one old bill: an item carrying `warranty` is drawn by
+    `includes/_warranty_sheet.html` instead — its own sheet, the invoice's
+    stylesheet. All Invoices itself never carries one; it lists bills.
+
+    ⚠ The choice between the two sheets is ONE source line, and must stay one:
+    split over lines, its tags leave blank lines inside every bill's wrapper,
+    and a bill here would no longer match the invoice character for character
+    (`ItIsTheSameBillNotACopyTests`).
+
     SELF-CONTAINED, like the invoice: no Bootstrap, no icon font, no CDN. A
     workshop printing on a dropped connection must not get an unstyled page.
     ============================================================================
@@ -159,6 +169,13 @@
         blank final page. Both spellings are given: the modern property and
         the legacy one browsers still honour in print.
         {% endcomment %}
+        /* The warranty slip's "FOR:" line, under DATE and #. `.inv-meta`
+           sets the 20mm drop below the letterhead for the first line; the
+           second sits right under it. */
+        .inv-meta.wr-for {
+            margin-top: 1.5mm;
+        }
+
         @media print {
             .sheet-wrap + .sheet-wrap {
                 break-before: page;
@@ -264,7 +281,7 @@
     {% endcomment %}
     {% for item in sheets %}
     <div class="sheet-wrap">
-        {% include 'workshop/includes/_invoice_sheet.html' with doc=item.doc jobcard=item.jobcard %}
+        {% if item.warranty %}{% include 'workshop/includes/_warranty_sheet.html' with doc=item.doc jobcard=item.jobcard %}{% else %}{% include 'workshop/includes/_invoice_sheet.html' with doc=item.doc jobcard=item.jobcard %}{% endif %}
     </div>
     {% empty %}
     <div class="no-invoices">

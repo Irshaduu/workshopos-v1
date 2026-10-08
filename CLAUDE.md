@@ -5414,7 +5414,8 @@ outside the system; counting them now would rewrite profit, cash and balances
 for periods nobody can check. `OldBillsAreConnectedToNothingTests` holds an
 **allow-list of the only application files that may mention the model** — the
 model, its rules module, its views, `car_profiles.py`, `known_car.py`,
-`master_data.py` and the purge command — and fails the moment any other file
+`master_data.py`, the purge command and `warranty.py` (a claim may be made
+against an Excel bill — see "Warranty") — and fails the moment any other file
 does. **Adding a file to that list is a decision, never a fix for a red test.**
 Adding the real sample bill moves no Profit, Cash Tracking or Position figure
 and no stock, asserted.
@@ -5895,6 +5896,203 @@ the window, so a shop owed only its opening balance is not on that list. Its own
 page and the Profit page's tile both carry it. That is how the section already
 treats any quiet shop, not something this added.
 → `workshop/tests/test_legacy_data.py`
+
+## Warranty — free work because of an earlier bill
+
+**A customer comes back with a part that failed; a WARRANTY CLAIM opens a
+WARRANTY CARD for it** (built 2026-10-02 → 10-08 on the owners' design). Every
+rule is `workshop/warranty.py`. The screens: `/warranty/` (drawer → Warranty,
+Office and Owner) — **Waiting on the shop**, then every warranty card; New claim's
+car list; **the car's warranty page** `/warranty/new/<reg>/`, which the Car
+Profile's **Warranty** button opens directly; and the card, `/warranty/<pk>/`.
+
+⚠ **A WARRANTY CARD IS A JOB CARD UNDERNEATH, AND THAT IS THE WHOLE SAFETY OF
+IT.** `JobCard.kind = WARRANTY` (`0088`). Mechanic, concerns, parts, stock draws,
+photos, the shop ledger and the Profit page's parts cost all work unchanged — no
+second copy of any money code. Three things differ, all held in `JobCard.save()`
+and `update_totals()` on EVERY save, never trusted to a screen:
+
+- its own number series, **WR-YY-NNN** from 001 every January, with no Excel floor;
+- **the customer pays nothing** — labour, bill, received and discount are forced
+  to ₹0, and `JobCardSpareItem.save()` makes a warranty row's customer price ₹0
+  ("given away", the meaning a stored zero already has);
+- **it is never settled** — payment state forced back to PENDING, no fleet.
+
+The doors also refuse it out loud: Settle Bill says there is nothing to settle;
+a fleet move is refused **in the view**, which is load-bearing because
+`job_cards.add()` writes with a bulk `.update()` that never runs `save()`; the
+invoice redirects to the **warranty slip** (`build_warranty_slip` — no prices
+anywhere, closing on WARRANTY · NO CHARGE); and `jobcard_edit` redirects to the
+warranty card, so every link that opens "a card" lands on the right page.
+
+**`bill_cards()` is `live_cards()` without warranty cards** — the one answer for
+every screen that lists or counts BILLS: Pending Bills, All Invoices, the board's
+pending count, `analysis_engine.live_jobcards()` (turnover, the job counts and
+averages, How Customers Paid, what customers owe) and the estimate's price hint.
+A ₹0 card that is never settled would dilute every average and sit "unsettled"
+for ever. **Its COST still reaches profit** — through its parts, read by route
+and date (`_live_spares`), never through this. `card.is_bill` is the same rule
+for a card in hand.
+
+⚠ **ONE CLAIM IS ONE PART** (the owners, 2026-10-07). The car's warranty page
+lists every FINISHED bill, newest first — job cards, earlier warranty cards and
+Excel bills — and each part carries its own Claim button. `open_claim()` copies
+that part onto a new card, **linked to the exact part it replaces**:
+`JobCardSpareItem.replaces` (a card's part) or `replaces_line` (an old bill's
+line), `0089`, neither editable.
+
+| the failed part | the card's claimed part |
+|---|---|
+| a spare-shop part | same name, shop and quantity, ordered today, **Shop Price blank** |
+| a warehouse draw | a new draw of the same product — off the shelf now, at the shelf's cost |
+| an Excel bill's line | a spare-shop part with no shop — Office picks it |
+
+The link is what the page reads. An OPEN claim → **"Being claimed · WR-…"**,
+claimable again only once it is finished or cancelled. A FINISHED one →
+**"Replaced · WR-…"**: the part on the car now is the replacement, and a second
+failure is claimed under the card that fitted it ("2nd claim"), never on the old
+bill again. `open_claim()` locks the part (`select_for_update`) and re-checks
+every rule, so a crafted POST or two presses at once cannot open two claims.
+
+**A PART A CLAIM POINTS AT STAYS PUT.** The job card's spare formsets refuse its
+delete (`SourceScopedSpareFormSet.clean`); Move to Unassigned refuses it; an
+Excel bill cannot rename or remove that line (an edit rewrites the lines, so
+`repoint_old_bill_claims` points each claim back at the line of the same name)
+and cannot be deleted. The claimed part itself goes only with its card.
+
+⚠ **THERE IS NO CLAIM FOR THE WORK ALONE** (the owners, 2026-10-08 — a
+work-only claim was built and taken out again the same week). A clamp
+re-tightened or an alignment redone is done without a card: nothing is ordered,
+nothing waits, nothing costs, and a part is what makes a claim worth tracking.
+Anything the repair needs that was NOT on the earlier bill goes on an ordinary
+job card and is billed — so a claim card carries its one part and nothing else:
+no "+ Add" on its part section, no delete, and `_NoNewRows` reads a post claiming
+more rows as no more.
+
+**A car still on the floor offers nothing to claim** — a part that fails before
+the car leaves is fixed on that card. **A job card and a warranty card may be
+open on one car at once**: `get_active_conflict()` is JOB cards only, and a
+warranty card answers its own rule, one open claim per part — `open_conflict()`
+picks the right rule for Undo Completion, which a warranty card is refused when a
+later claim has taken its part (`reopen_conflict`).
+
+⚠ **THE WARRANTY CLOCK RUNS FROM THE FIRST BILL, AND A CLAIM NEVER RESTARTS IT**
+(the owners, 2026-10-08). A part fitted on JB-26-005 and replaced on WR-26-018 is
+still under JB-26-005's warranty — the replacement carries what is left of it.
+So every age and every "km since" a claim is judged by is measured from
+`first_bill()` — the bill the part's chain started on, walked back through
+`warranty_for` — never the claim day, which would make a part fitted eight months
+ago look three months old. A SHOP's own warranty on the replacement is a
+different clock; its dates are on the part's own line.
+
+⚠ **THE SYSTEM NEVER DECIDES WHETHER A PART IS COVERED.** There is no expiry date
+anywhere. It shows the age **to the day** — `age_phrase`: "1 month 3 days",
+calendar months, a month landing on a shorter month's end stopping at that end,
+no "ago" — because a warranty is decided at its edge, and "5 months 28 days"
+against "6 months 2 days" is the whole question. The card adds the km since.
+The owner decides.
+
+**ONE DATE RULE on the car's warranty page: the date under a bill's number is
+that bill's own date.** A bill reads `1 Sep 2026 · 1 month 7 days`. A warranty
+card's block is tinted and reads `20 Aug 2026 · 2nd claim · for WR-26-001` — no
+age, because its date is a claim day and not the clock. The clock sits on the
+claimable part beside its button: `First fitted JB-26-005 · 8 months 26 days`.
+**"2nd claim", "3rd claim" are said for a REPEAT only** (`round_label`) — the
+first is the ordinary case and needs no word — and a repeat's button says it
+before it is pressed.
+
+**EACH PART SAYS WHAT ITS SHOP'S LEDGER SAYS** — `× 2 · Biljo · 01/09 – 03/09 ·
+₹1,450`: how many, the shop, the ordered/received pair and the **SHOP price**,
+never the customer price, so an owner finds the part in that shop's book in
+seconds. The pair is `spare_dates.date_pair` / `short_date` — moved there from
+the read-only job card, which prints it the same way — with the year dropped
+when it is the bill's. A stock part says its category; an Excel line only how
+many (its amount is what the CUSTOMER paid, a different figure). Each piece is
+its own nowrap span, so a phone breaks the line between pieces, never inside a
+date or a price.
+
+**A CLAIM'S CHAIN IS LINKED ACROSS THE PAGE**, because a 1st and a 2nd claim sit
+far apart in a long history. Every bill block is `id="bill-<number>"`, and "for
+WR-…", "First fitted JB-…" and "Replaced · WR-…" are in-page jumps; `:target`
+outlines the block, and a hashchange clears the search when it is hiding the
+target. Each block's Open goes to that bill's own page — a warranty card's opens
+the warranty card.
+
+**THE SHOP PRICE IS THE SHOP'S ANSWER, in the box that already holds it**: blank
+while the shop has not answered, **₹0** when it replaced the part free, an amount
+when the workshop paid (the shop charged, or the replacement was bought
+elsewhere). Nothing new is stored, so the shop ledger and the Profit page read
+the column they always did, and **Waiting on the shop** is exactly a shop part on
+a warranty card with no Shop Price — open or finished, oldest first, never
+filtered, because a shop often answers after the car has gone. ⚠ **A ₹0 must
+survive a save**: the job card's `_tidy_money_initial` shows a stored zero as
+blank, which here would turn "free" back into "waiting" on the next save, so the
+claimed part uses `_tidy_claim_money`, which keeps it.
+
+**Two rare cases, one quiet control each.** The replacement came from **another
+shop**: change the row's shop, and it then says "First fitted from <shop>". It
+came off the **Unassigned Spares** shelf: a link under the row fills the shop,
+price, transport and dates from a Hub row and posts `imported_unassigned_ids`, so
+the save removes the Hub row — the job card's own import, Office and Owner only.
+
+⚠ **A SUPPLIES SHOP PART IS REPLACED FROM OUR OWN STOCK, AND THE RARE OTHER CASE
+NEEDS NO CODE** (the owners' call). About 98% of the time the workshop takes a
+new one off its shelf, which is exactly what a stock part's claim does. When a
+Supplies Shop does replace it, **enter that shop's bill at its normal price, then
+Record a Discount for the same amount** on the shop's page: the shelf count
+stays right, the shop is owed nothing, and the discount lands as profit on its
+date against the draw's cost.
+
+**The warranty card's page carries only what a claim needs** — Today (date,
+mileage, mechanic; make and model only while the earlier bill left them blank),
+Complaint, the ONE claimed part drawn as **the Job Card's own spare row** with no
+customer price, Work done, photos and a note. No customer box, no customer price,
+no labour charge. The quantity may go down (one of four injectors failed), never
+above the bill's (`claim_limit`); the part's name and a stock product are
+disabled fields. Its save is the job card's own: `_floor_locked_data`, and
+`_after_parts_saved`, which was extracted for it so the block that keeps the shop
+ledgers honest exists once, not three times. The ordered/received chip is
+`includes/_date_chip.html`, shared with the job card. Floor works on it like any
+card; the shop, Shop Price and transport are not drawn for Floor and post back
+from a hidden cell as on a job card, the prices pinned on the server.
+
+**Cancel claim** (the card's ⋮, Office and Owner) removes a claim opened by
+mistake while nothing real has happened: the card is open, no shop charged, no
+transport paid. Its parts are removed through the models, so a stock part goes
+back on the shelf and every shop it named is refreshed. **No DeletionLog** — the
+estimate's reasoning: no customer money was ever on it. Its WR number may be
+taken by the next claim.
+
+**Where else it shows.** The board puts warranty cards in **their own group under
+the job cards** (first page only, never paged) with a teal **Warranty** chip
+beside All; "In Workshop" and All still count every open card. On a Car Profile
+a warranty visit reads "No charge" with the badge (an owner sees its cost where a
+bill shows gross), a bill a claim was made against carries a shield and the WR
+number, and "on the floor" is COUNTED, because a finished newest card no longer
+means the car has left. The service history counts a warranty visit (its parts
+join PART LIFE — a refit is a fitting) and prints WARRANTY · NO CHARGE where a
+bill prints its amount. The read-only card drops the Settled column — "never",
+not "not yet". One colour wherever a warranty is named, **teal** (`--wr-*` and
+`.wr-badge` in style.css), because green and red are money, blue a button and
+amber "changed".
+
+**The car's warranty page costs the same queries for a two-bill car and a
+ten-bill one** — `bills_for` loads bills, parts, old-bill lines and claims in a
+fixed set of queries and walks the chain in Python. Asserted as an invariant
+between two histories, never as a magic number.
+
+**On a phone** (below 576px) a part's state ("Replaced · WR-…") moves to a line
+under it so the part's text keeps the row, the Claim button is 38px (it asks
+first, so a near miss costs nothing — the dashboard chip's reading of the 44px
+rule) and Open is its icon alone, its label kept for a screen reader. Measured at
+375px: every bill header and part line on one line, nothing scrolling sideways.
+
+⚠ **`warranty.py` READS OLD BILLS, BY DECISION.** A claim may be made against an
+Excel bill, so it is on `OldBillsAreConnectedToNothingTests.ALLOWED`. It reads
+the number, the car and the lines to offer them, stores only the NUMBER on the
+warranty card (`warranty_for` — a JB number exists once across both tables, so
+it names either exactly) and writes nothing to the old bill.
+→ `workshop/tests/test_warranty.py`
 
 ## Settling — "what is still unfilled"
 
@@ -7289,6 +7487,8 @@ hand-typed in 25 places across 13 files until 2026-09-21 (AUD-0007): every copy
 was right and none did anything, so the day a trash is revived — or "live" changes
 meaning — it now changes in one place. `inventory/signals.py`'s dormant reversal
 handlers are the one other reader, by design: they must see the flag move.
+**`bill_cards()` is `live_cards()` without warranty cards**, for every screen
+that lists or counts bills (see "Warranty").
 → `test_live_cards.py` — a scan fails on a hand-typed copy.
 
 **There is deliberately no delete for staff, only deactivate.** Changing someone's
@@ -10636,12 +10836,13 @@ their fetch directly from the filter handler, and Car Profiles and Job Cards hav
 filter or pager at all, only a search box. **Check each copy before assuming a fix
 applies to all seven.**
 
-*Consequence, accepted knowingly:* the AJAX list-search pattern exists as **seven
-near-copies** across the list pages. It has drifted once already — an
+*Consequence, accepted knowingly:* the AJAX list-search pattern exists as **nine
+near-copies** across the list pages (the two warranty lists, 2026-10, are the
+eighth and ninth, and carry the out-of-order guard from the start). It has drifted once already — an
 out-of-order-response guard was written in `estimate_list.html` and never reached the
 other six, so they showed stale rows for a fast typist until it was copied across by
 hand. Logged as `AUD-0086` in `TECH_DEBT.md`. A shared `list_search.js` is the
-textbook fix and was deliberately declined: **seven working copies beat one untested
+textbook fix and was deliberately declined: **working copies beat one untested
 abstraction** on a system this close to shipping. Revisit only if that pattern needs
 changing again.
 
@@ -10664,7 +10865,7 @@ python manage.py runserver
 ```
 
 ```bash
-# Full test suite — 89 files, 2,981 tests (counted 2026-10-01). Always SQLite (see below).
+# Full test suite — 90 files, 3,111 tests (counted 2026-10-08). Always SQLite (see below).
 # ⚠ IT RUNS AFTER A **MAJOR** UPDATE, NOT BEFORE EVERY COMMIT (the owner's call,
 # 2026-09-20) — and "major" is decided by BLAST RADIUS, measured, or the word
 # quietly comes to mean "never". FULL suite: any model, migration, form, signal,
@@ -10713,7 +10914,9 @@ python manage.py runserver
 #     re-run only the failing files SERIALLY before calling one a bug.
 #   • ⚠ Do not pipe it through `tail`: that buffers the whole run, so there is
 #     no progress to watch until it exits.
-# Last full run 2026-09-30: 2,936 tests, 3,264s (54.4 min) on `--parallel 4`
+# Last full run 2026-10-08: 3,111 tests, 2,552s (42.5 min) on `--parallel 4`
+# with 1.8 GB free, ALL GREEN, verifying the Warranty section.
+# Before it: 2026-09-30, 2,936 tests, 3,264s (54.4 min) on `--parallel 4`
 # with 2.3 GB free, ALL GREEN, verifying the shop discounts on the About
 # page, the map and the shop lists, and the fleet discount removed.
 # Before it: 2026-09-24, 2,903 tests, 509s on `--parallel 4`, ALL GREEN,
@@ -11028,12 +11231,12 @@ unless `EMAIL_REAL=true`; `manage.py test` uses locmem regardless.
 ## App boundaries
 
 **`workshop/`** — job cards, billing, fleet accounts, spare shops, cashbook, estimates,
-old bills, photos, auth, owner analytics, deletion history, master data.
+old bills, warranty, photos, auth, owner analytics, deletion history, master data.
 
-`views/` is a package of **23 modules**: `about`, `audits`, `autocomplete`,
+`views/` is a package of **24 modules**: `about`, `audits`, `autocomplete`,
 `billing`, `bulk_payer`, `car_profiles`, `completed`, `dashboard`, `deletion_history`,
 `estimate`, `jobcard`, `legacy`, `master_lists`, `notifications`, `old_bills`, `paid`, `pending`, `photos`,
-`push`, `rent`, `salary_advance`, `spare_shop`, `withdrawal`. **`views/__init__.py` re-exports everything**, so
+`push`, `rent`, `salary_advance`, `spare_shop`, `warranty`, `withdrawal`. **`views/__init__.py` re-exports everything**, so
 `from . import views; views.some_function` and existing URL wiring keep working — when
 adding a view, add it to both its module and the re-export list.
 
@@ -11041,21 +11244,22 @@ adding a view, add it to both its module and the re-export list.
 `urls.py`: `analysis_views`, `auth_views`, `cashbook_views`, `cleanup_views`,
 `management_views`.
 
-**Nineteen modules hold no views at all** — this is the codebase's main structural idea, and
+**Twenty-one modules hold no views at all** — this is the codebase's main structural idea, and
 each exists so that one rule has exactly one implementation:
 
 | Module | The one question it answers |
 |---|---|
 | `analysis_engine.py` | the money math behind Analysis (pure functions over a date window) |
-| `invoice.py` | what does the customer see? — owns every bill and the estimate |
+| `invoice.py` | what does the customer see? — owns every bill, the estimate and the warranty slip |
 | `settlement.py` | what is still unfilled before this bill should be settled? |
 | `master_data.py` | the rename/merge rule, shared by Master Lists and Data Cleanup |
 | `money.py` | is this typed rupee amount acceptable for its column? |
 | `money_dates.py` | what day did this money move? — both Cashbook forms, all three payment screens, the Supplies Shop bill and the job card's admitted date |
-| `spare_dates.py` | is this ordered/received pair the right way round? |
+| `spare_dates.py` | is this ordered/received pair the right way round — and how is it printed short? |
 | `return_to.py` | where does this page send you when you leave it? |
 | `client_ip.py` | what is the visitor's IP? — the lockout, the alerts and the session list (AUD-0107) |
 | `delete_window.py` | has this money row been in the books too long for Office to delete? |
+| `discounts.py` | may this discount be written? — never more than is owed, never forward; every ledger that takes one |
 | `rent.py` | how much should we hand the rent collector today? |
 | `photos.py` | where do the bytes go, and how is the URL signed? |
 | `mileage.py` | can this hand-typed odometer reading be believed? |
@@ -11065,6 +11269,7 @@ each exists so that one rule has exactly one implementation:
 | `pricing.py` | what markup is suggested, and is this typed markup usable? — never a price (that is the browser's) |
 | `old_bills.py` | is this Excel bill's number, date and money acceptable — and where does the live JB sequence start? |
 | `old_bill_pdf.py` | what does this Excel bill's PDF say, box by box? — fills the form, never saves |
+| `warranty.py` | which part of which earlier bill may be claimed, and where does its warranty clock start? |
 
 `decorators.py` defines the RBAC decorators. `middleware.py` holds
 `SessionTrackingMiddleware`, `NoStoreMiddleware`, `NoIndexMiddleware` and
@@ -11144,6 +11349,9 @@ gets fixed in one and left broken in the other.
 - **Only one active job card per registration number at a time** — a hard block, no
   bypass, via `JobCard.get_active_conflict()`. Any code path that can put a job card into
   the active state (create, edit the registration, undo a completion) must call it first.
+  ⚠ **JOB cards only**: a warranty card never blocks a job card nor is blocked by one —
+  it answers its own rule, one open claim per part, and `card.open_conflict()` picks
+  the right rule for a door that does not know the card's kind.
 - **The completion field is `JobCard.completed`** (boolean) with `completed_date`, served
   at `/completed/`. Renamed from `delivered`/`discharged_date` — the whole stack uses
   `completed` now; don't reintroduce "delivered" naming.
@@ -11175,8 +11383,8 @@ table into the general roster at `/manage/?section=staff`. Only
 
 # Testing conventions
 
-Tests live in `workshop/tests/` and `inventory/` — **89 files, 2,981 tests**,
-re-counted 2026-10-01. (`workshop/tests/` is 83 `test_*.py` plus `tests.py`;
+Tests live in `workshop/tests/` and `inventory/` — **90 files, 3,111 tests**,
+re-counted 2026-10-08. (`workshop/tests/` is 84 `test_*.py` plus `tests.py`;
 `inventory/` is 5, one of which is `tests_suppliers.py` and so is missed by a
 `test_*.py` glob — which is why the two halves used to be written down wrong.)
 

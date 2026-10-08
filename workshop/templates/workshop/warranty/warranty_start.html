@@ -1,0 +1,308 @@
+{% extends 'workshop/base.html' %}
+
+{% block title %}Warranty · {{ registration }}{% endblock %}
+
+{% block content %}
+{% comment %}
+==========================================================================
+THE CAR'S WARRANTY PAGE — which part failed?
+==========================================================================
+Reached from the Car Profile's Warranty button, or from New claim's car list.
+Every rule is `workshop/warranty.py`.
+
+The owners' flow: a customer says "the coolant elbow broke — is it under
+warranty?". Find it here (the search box), read how long ago its bill was —
+whether it is still covered is the owner's call, the system never decides it —
+and press Claim on that part.
+
+ONE CLAIM IS ONE PART. This car's bills, newest first — finished job cards,
+warranty cards (a replacement fitted under warranty can fail too) and
+Excel-era old bills — one block each, with its date, how long ago, and an
+Open link to the bill. ONE DATE RULE: the date under a bill's number is that
+bill's own date. A warranty card's block is tinted and reads "20 Aug 2026 ·
+2nd claim · for WR-26-001" ("2nd claim" only for a repeat — the first needs
+no word); its age is not the warranty clock, because a claim never restarts
+it (`warranty.first_bill`), so the clock sits on the part you would claim,
+beside its button: "First fitted JB-26-043 · 8 months 26 days". A claim's
+chain is spread over the page, so each of those numbers, and "Replaced ·
+WR-…", jumps to that bill's block here. Under each block, its parts, each
+saying where it stands:
+
+  * a Claim button — it can be claimed; one question, then its card opens;
+  * "Being claimed · WR-…" — a claim is open on it (a link to that card);
+  * "Replaced · WR-…" — a claim on it is finished: the new part, listed under
+    that WR bill (the link jumps to it), is the one on the car now, and a
+    failure is claimed THERE;
+  * "Newer one on JB-…" (grey, beside the button) — the same part was fitted
+    again on a later bill. A note, never a block.
+
+A bill's STOCK parts fold under "Stock items · N" (a part off our own shelf is
+rarely claimed); a bill with only stock parts shows them open, and an old bill
+never split the two. There is no claim for the work alone (the owners,
+2026-10-08): a fix with no part is done without a card.
+
+No script is needed to claim: every button is its own small form, and the
+server holds every rule. The search box filters as you type.
+==========================================================================
+{% endcomment %}
+<style>
+    .wn-page { max-width: 760px; }
+    .wn-hero { margin-bottom: 12px; }
+    .wn-hero h1 {
+        display: flex; align-items: center; gap: .45rem; margin: 0;
+        font-size: 1.35rem; font-weight: 800; letter-spacing: -.01em;
+    }
+    .wn-hero h1 i { color: var(--wr-ink); font-size: 1.15rem; }
+    .wn-car { margin: 4px 0 0; font-weight: 700; overflow-wrap: anywhere; }
+    .wn-sub { margin: 2px 0 0; font-size: .85rem; color: var(--color-text-muted); }
+
+    .wn-floor {
+        display: flex; gap: 8px; align-items: flex-start; margin: 0 0 12px;
+        padding: 10px 12px; border-radius: 12px; background: #fff7ed;
+        border: 1px solid #fed7aa; color: #9a3412; font-size: .85rem;
+    }
+
+    /* THE APP'S SEARCH BOX — Completed's own values, copied, never
+       approximated (Car Profiles copies them the same way, and a test holds
+       all of them to Completed's). Live as you type. */
+    .wn-search {
+        position: relative;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .wn-search .search-icon {
+        position: absolute;
+        left: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--color-text-muted);
+        font-size: 0.75rem;
+        pointer-events: none;
+    }
+
+    .wn-search-input {
+        width: 100%;
+        height: 40px;
+        box-sizing: border-box;
+        border: 1px solid var(--color-border);
+        border-radius: 999px;
+        background: var(--color-card);
+        font-size: 0.8rem;
+        color: var(--color-text);
+        padding: 0 14px 0 32px;
+        outline: none;
+        transition: border-color 0.15s, box-shadow 0.15s;
+        box-shadow: 0 1px 3px var(--color-shadow);
+    }
+
+    .wn-search-input:focus {
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    .wn-search-input::placeholder { color: var(--color-text-muted); }
+    .wn-search { margin-bottom: 12px; }
+
+    .wn-bills { display: flex; flex-direction: column; gap: 12px; }
+    .wn-bill {
+        background: #fff; border: 1px solid var(--color-border);
+        border-radius: 14px; padding: 12px 14px;
+    }
+    .wn-bill[hidden] { display: none; }
+    .wn-bill-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 6px; }
+    .wn-no { font-size: 1rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .wn-tag {
+        margin-left: 6px; padding: 1px 7px; border-radius: 999px;
+        font-size: .68rem; font-weight: 700; vertical-align: 2px;
+    }
+    .wn-tag-old { background: #fef9c3; color: #854d0e; }
+    .wn-when { font-size: .8rem; color: var(--color-text-muted); }
+    /* Each piece stays whole and its "·" stays at the end of the line it ends,
+       so a phone breaks the line BETWEEN pieces, never inside a date. */
+    .wn-bit { white-space: nowrap; }
+    .wn-age { font-weight: 700; color: var(--color-text); }
+    /* A warranty card's bill wears the warranty colour, so a replacement fitted
+       under a claim is told from a paid bill at a glance. ONE DATE RULE: the
+       date under a bill's number is that bill's own date. A paid bill's age
+       sits beside it, because its parts were first fitted then; a warranty
+       card's age would be its claim day's, which is not the warranty clock
+       (`warranty.first_bill`), so its header says which claim and what for,
+       and the clock is on its part, beside the button (`.wn-clock`). */
+    .wn-bill-wr { background: var(--wr-tint); border-color: var(--wr-line); }
+    .wn-clock { display: block; font-size: .76rem; color: var(--wr-ink-deep); }
+    .wn-clock b { font-weight: 700; }
+    /* A claim's chain is spread over the page — other bills come between its
+       links — so every bill number that has a block HERE jumps to it: what a
+       claim is "for", the bill a part was first fitted on, "Replaced · WR".
+       The block landed on is outlined; it clears the fixed bar on a laptop
+       (`--sticky-top` is 0 on a phone, where the bar is at the bottom). */
+    .wn-jump { color: inherit; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+    .wn-bill { scroll-margin-top: calc(var(--sticky-top, 0px) + 12px); }
+    .wn-bill:target { outline: 2px solid var(--wr-ink); outline-offset: -1px; }
+    .wn-open {
+        display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+        min-height: 36px; padding: 0 10px; border-radius: 10px;
+        border: 1px solid var(--color-border); color: var(--wr-ink);
+        font-size: .8rem; font-weight: 700; text-decoration: none;
+    }
+    @media (hover: none) { .wn-open { min-height: 44px; } }
+
+    .wn-part {
+        display: flex; align-items: center; gap: 10px;
+        min-height: 48px; padding: 4px 2px;
+    }
+    .wn-part[hidden] { display: none; }
+    .wn-part + .wn-part { border-top: 1px solid #f1f5f9; }
+    .wn-part-text { flex: 1 1 auto; min-width: 0; }
+    .wn-part-name { font-weight: 600; overflow-wrap: anywhere; }
+    .wn-part-meta { display: block; font-size: .76rem; color: var(--color-text-muted); }
+    .wn-newer { display: block; font-size: .74rem; font-style: italic; color: #64748b; }
+    .wn-part form { flex: none; margin: 0; }
+    .wn-claim {
+        min-height: 36px; padding: 0 14px; border: 0; border-radius: 999px;
+        background: var(--wr-ink); color: #fff; font-size: .82rem; font-weight: 800;
+    }
+    @media (hover: none) { .wn-claim { min-height: 44px; } }
+    @media (hover: hover) { .wn-claim:hover { background: var(--wr-ink-deep); } }
+    .wn-state {
+        flex: none; display: inline-flex; align-items: center; gap: 5px;
+        min-height: 36px; padding: 0 10px; border-radius: 999px;
+        border: 1px solid var(--color-border); background: #f8fafc;
+        color: var(--color-text-muted); font-size: .76rem; font-weight: 700;
+        text-decoration: none; text-align: right;
+    }
+    .wn-state-open { border-color: var(--wr-line); background: var(--wr-tint); color: var(--wr-ink-deep); }
+    @media (hover: none) { .wn-state { min-height: 44px; } }
+
+    .wn-stock { margin-top: 4px; border-top: 1px dashed var(--color-border); padding-top: 4px; }
+    .wn-stock summary {
+        display: flex; align-items: center; gap: 6px; min-height: 40px;
+        font-size: .82rem; font-weight: 700; color: var(--color-text-muted); cursor: pointer;
+    }
+    .wn-none { margin: 4px 0; font-size: .82rem; color: var(--color-text-muted); }
+
+    /* THE PHONE, below the app's 576px. A status chip beside the part ate
+       half the row and broke the part's line mid-date, so here:
+         * a STATUS ("Replaced · WR-…", "Being claimed · WR-…") is a line UNDER
+           the part, at its own width — the part's text keeps the whole row;
+         * the Claim button is 38px, not 44: it asks first, so a near miss
+           costs nothing (the dashboard chip's reading of the 44px rule);
+         * Open is its icon alone (the label stays for a screen reader), which
+           gives the date line under the number its one line back. */
+    @media (max-width: 575.98px) {
+        .wn-part { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; }
+        .wn-part > .wn-state {
+            grid-column: 1 / -1; justify-self: start; margin-top: 2px;
+            min-height: 32px; padding: 0 10px; font-size: .74rem; text-align: left;
+        }
+        .wn-claim { min-height: 38px; padding: 0 14px; font-size: .8rem; }
+        .wn-open { width: 38px; min-height: 38px; padding: 0; justify-content: center; }
+        .wn-open-word { display: none; }
+    }
+    .wn-empty { padding: 24px 12px; text-align: center; color: var(--color-text-muted); }
+</style>
+
+<div class="wn-page">
+    <a href="{{ back_url }}" class="pg-back">
+        <i class="bi bi-arrow-left"></i><span>{{ back_label }}</span>
+    </a>
+
+    <header class="wn-hero">
+        <h1><i class="bi bi-shield-check" aria-hidden="true"></i> Warranty</h1>
+        <p class="wn-car">{% if car_name %}{{ car_name }} · {% endif %}{{ registration }}</p>
+        <p class="wn-sub">Every part fitted, newest bill first. Check how long ago — whether it is covered is your call. One claim is one part.</p>
+    </header>
+
+    {% if on_floor %}
+    <p class="wn-floor"><i class="bi bi-info-circle" aria-hidden="true"></i><span>{{ on_floor.bill_number }} is still on the floor — a part that fails before the car leaves is fixed on that card.</span></p>
+    {% endif %}
+
+    {% if bills %}
+    <div class="wn-search">
+        <i class="bi bi-search search-icon" aria-hidden="true"></i>
+        <input type="text" id="wnSearch" class="wn-search-input" placeholder="Find a part" aria-label="Find a part" autocomplete="off">
+    </div>
+    <p class="wn-empty" id="wnNoMatch" hidden>No part matches that.</p>
+
+    <div class="wn-bills" id="wnBills">
+        {% for bill in bills %}
+        <section class="wn-bill{% if bill.is_warranty %} wn-bill-wr{% endif %}" id="bill-{{ bill.number }}" data-bill="{{ bill.number }}">
+            <div class="wn-bill-head">
+                <div>
+                    <span class="wn-no">{{ bill.number }}</span>{% if bill.is_old_bill %}<span class="wn-tag wn-tag-old">Excel</span>{% elif bill.is_warranty %}<span class="wr-badge wn-tag">Warranty</span>{% endif %}
+                    {% if bill.is_warranty %}
+                    <div class="wn-when"><span class="wn-bit">{{ bill.date|date:"j M Y" }} ·</span>{% if bill.round_label %} <span class="wn-bit">{{ bill.round_label }} ·</span>{% endif %} <span class="wn-bit">for <a class="wn-jump" href="#bill-{{ bill.warranty_for }}">{{ bill.warranty_for }}</a></span></div>
+                    {% else %}
+                    <div class="wn-when"><span class="wn-bit">{{ bill.date|date:"j M Y" }}{% if bill.age %} ·{% endif %}</span>{% if bill.age %} <span class="wn-bit wn-age">{{ bill.age }}</span>{% endif %}</div>
+                    {% endif %}
+                </div>
+                <a class="wn-open" href="{{ bill.url }}?back={{ request.get_full_path|urlencode }}" aria-label="Open {{ bill.number }}" title="Open {{ bill.number }}"><span class="wn-open-word">Open</span> <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a>
+            </div>
+
+            {% for part in bill.shop_parts %}{% include "workshop/warranty/_claim_part.html" with part=part bill=bill %}{% endfor %}
+            {% if bill.stock_parts %}
+            <details class="wn-stock"{% if not bill.shop_parts %} open{% endif %}>
+                <summary><i class="bi bi-box-seam" aria-hidden="true"></i>Stock items · {{ bill.stock_parts|length }}</summary>
+                {% for part in bill.stock_parts %}{% include "workshop/warranty/_claim_part.html" with part=part bill=bill %}{% endfor %}
+            </details>
+            {% endif %}
+            {% if not bill.shop_parts and not bill.stock_parts %}<p class="wn-none">No parts on this bill.</p>{% endif %}
+        </section>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="wn-empty">No finished bills for this car yet, so there is nothing to claim against.</p>
+    {% endif %}
+</div>
+
+<script>
+(function () {
+    'use strict';
+    // Find a part across every bill; a fold holding a match opens, and a
+    // bill's own number finds every part on it.
+    var search = document.getElementById('wnSearch');
+    var bills = document.getElementById('wnBills');
+    var none = document.getElementById('wnNoMatch');
+    if (!search || !bills) return;
+    var folds = bills.querySelectorAll('.wn-stock');
+    folds.forEach(function (fold) { fold.dataset.startOpen = fold.open ? '1' : ''; });
+    // A jump along a claim's chain is the browser's own #fragment jump, and
+    // `:target` outlines the block. The one thing it cannot do is land on a
+    // block the search has hidden: then the search is cleared and it is
+    // scrolled to.
+    window.addEventListener('hashchange', function () {
+        var target = document.getElementById(decodeURIComponent(location.hash.slice(1)));
+        if (target && target.hidden) {
+            search.value = '';
+            search.dispatchEvent(new Event('input'));
+            target.scrollIntoView({block: 'start'});
+        }
+    });
+    search.addEventListener('input', function () {
+        var words = search.value.toLowerCase().split(/\s+/).filter(Boolean);
+        var anyBill = false;
+        bills.querySelectorAll('.wn-bill').forEach(function (bill) {
+            var number = bill.dataset.bill.toLowerCase();
+            var billHit = words.length > 0 && words.every(function (w) { return number.indexOf(w) !== -1; });
+            var anyPart = false;
+            bill.querySelectorAll('.wn-part').forEach(function (part) {
+                var text = (part.dataset.search || '').toLowerCase();
+                var hit = !words.length || billHit || words.every(function (w) { return text.indexOf(w) !== -1; });
+                part.hidden = !hit;
+                if (hit) anyPart = true;
+            });
+            var fold = bill.querySelector('.wn-stock');
+            if (fold) {
+                fold.open = words.length
+                    ? Array.prototype.some.call(fold.querySelectorAll('.wn-part'), function (p) { return !p.hidden; })
+                    : fold.dataset.startOpen === '1';
+            }
+            bill.hidden = words.length > 0 && !anyPart && !billHit;
+            if (!bill.hidden) anyBill = true;
+        });
+        none.hidden = anyBill;
+    });
+}());
+</script>
+{% endblock %}

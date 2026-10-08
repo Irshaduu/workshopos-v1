@@ -23,6 +23,7 @@ from django.utils import timezone
 from django.utils.http import urlencode
 from django.views.decorators.http import require_POST
 
+from .. import warranty
 from ..decorators import office_required
 from ..invoice import build_old_bill
 from ..models import OldBill, OldBillJobLine, OldBillPartLine, SparePart
@@ -112,11 +113,15 @@ def _form_from_bill(bill):
 def _save(bill, values, user):
     """Write the bill and replace its lines, all or nothing.
 
-    Replacing rather than matching rows up is safe here and only here: nothing
-    anywhere points at an old bill's line, no signal listens to one, and no
-    money moves — so a line's identity carries no meaning worth preserving.
+    Replacing rather than matching rows up keeps the printed order exactly as
+    typed, and no signal listens to a line and no money moves. ONE THING points
+    at a line: a warranty claim on it (2026-10-07) — so the claims are read
+    first and pointed back at the line of the same name once the lines are
+    written (`warranty.repoint_old_bill_claims`). The edit view has already
+    refused an edit that would remove or rename a claimed line.
     """
     with transaction.atomic():
+        claims = warranty.old_bill_claims(bill) if bill is not None else []
         if bill is None:
             bill = OldBill(created_by=user)
         for field in ('bill_date', 'bill_number', 'registration_number', 'brand_name',
@@ -132,6 +137,7 @@ def _save(bill, values, user):
             OldBillPartLine(old_bill=bill, name=name, quantity=quantity, amount=amount)
             for name, quantity, amount in values['parts']
         )
+        warranty.repoint_old_bill_claims(claims, bill)
         bill.update_totals()
     return bill
 
@@ -267,6 +273,9 @@ def old_bill_edit(request, pk):
     if request.method == 'POST':
         values, problems = read_old_bill(request.POST, timezone.localdate(), exclude_pk=bill.pk)
         if not problems:
+            # A line claimed under warranty keeps its name (`warranty`).
+            problems = warranty.old_bill_edit_problems(warranty.old_bill_claims(bill), values['parts'])
+        if not problems:
             try:
                 bill = _save(bill, values, request.user)
             except IntegrityError:
@@ -320,6 +329,12 @@ def old_bill_delete(request, pk):
     """
     bill = get_object_or_404(OldBill, pk=pk)
     number, month = bill.bill_number, bill.bill_date
+    # A bill a warranty claim was made against stays: the claim points at it.
+    claims = warranty.old_bill_claims(bill)
+    if claims:
+        messages.error(request, f"{number} can't be deleted — {claims[0]['name']} on it is "
+                                f"claimed under warranty on {claims[0]['number']}.")
+        return redirect('old_bill_edit', pk=bill.pk)
     bill.delete()
     messages.success(request, f"Deleted {number}.")
     return redirect(f"{reverse('old_bill_list')}?{urlencode({'month': f'{month:%Y-%m}'})}")

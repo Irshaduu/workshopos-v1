@@ -80,3 +80,7 @@ from .rent import (
     rent_rate_set, rent_rate_delete,
 )
 from .legacy import legacy_home, legacy_lock, opening_stock, opening_balances
+from .warranty import (
+    warranty_cancel, warranty_card, warranty_list, warranty_new, warranty_slip,
+    warranty_start,
+)

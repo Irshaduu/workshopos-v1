@@ -65,7 +65,9 @@ class BothCardMenusAreOneControlTests(TestCase):
         return re.search(re.escape(selector) + r'\s*\{([^}]*)\}', css).group(1)
 
     def test_both_pages_draw_the_shared_menu_and_trigger(self):
-        for name in ('dashboard/dashboard_home.html',
+        # The home board's card is its own include since the warranty group
+        # (2026-10-05) draws the same card under the job cards.
+        for name in ('dashboard/_pit_card.html',
                      'completed/completed_list_partial.html'):
             with self.subTest(template=name):
                 source = (TEMPLATES / name).read_text(encoding='utf-8')

@@ -47,6 +47,7 @@ def completed_list(request):
         for word in q.split():
             completed_jobcards = completed_jobcards.filter(
                 Q(registration_number__icontains=word) |
+                Q(bill_number__icontains=word) |
                 Q(customer_name__icontains=word) |
                 Q(brand_name__icontains=word) |
                 Q(model_name__icontains=word) |
@@ -179,12 +180,20 @@ def undo_completed(request, pk):
     if request.method == 'POST':
         jobcard = get_object_or_404(JobCard, pk=pk)
 
-        existing_job = JobCard.get_active_conflict(jobcard.registration_number, exclude_pk=jobcard.pk)
+        # By the card's own kind's rule: a job card collides with another open
+        # job card for the car, a warranty card with another claim on the same
+        # part (or the same bill's work) — never one kind with the other.
+        existing_job = jobcard.open_conflict()
         if existing_job:
+            if jobcard.is_warranty:
+                why = (f'{existing_job.bill_number} has claimed the same part '
+                       f'since. Resolve that one first.')
+            else:
+                why = ('it already has a different active job card (not yet '
+                       'Completed). Resolve that one first.')
             messages.error(
                 request,
-                f'Cannot undo completion for {jobcard.registration_number} — it already has a '
-                f'different active job card (not yet Completed). Resolve that one first.'
+                f'Cannot undo completion for {jobcard.registration_number} — {why}'
             )
             return redirect('completed_list')
 

@@ -1,0 +1,37 @@
+{% comment %}
+ONE PART on the car's warranty page — its name, how many and where it came
+from, and where it stands: a Claim button (its own small form, asking first),
+or "Being claimed" (opening that open claim's card) / "Replaced" (jumping to
+the finished claim's block on this page, where the part on the car now is). A part a claim fitted
+says which claim its next one would be — the button reads "2nd claim", "3rd
+claim" — so a repeat is plain BEFORE it is pressed. `part` is a dict from
+`warranty.bills_for`; `bill` is the bill it is on. The line under the name is
+`part.meta` — shop, dates and shop price, matched against that shop's ledger
+(`warranty._meta`). A part a claim fitted that can be claimed again carries
+the WARRANTY CLOCK under it — "First fitted JB-26-043 · 8 months 26 days" —
+because its bill's own date is the claim day, not where the clock started
+(`warranty.first_bill`). `data-search` is what the page's search box reads.
+{% endcomment %}
+<div class="wn-part" data-search="{{ part.name }} {{ part.meta|join:' ' }}">
+    <div class="wn-part-text">
+        <span class="wn-part-name">{{ part.name }}</span>
+        {% if part.meta %}<span class="wn-part-meta">{% for bit in part.meta %}<span class="wn-bit">{{ bit }}{% if not forloop.last %} ·{% endif %}</span>{% if not forloop.last %} {% endif %}{% endfor %}</span>{% endif %}
+        {% if bill.is_warranty and not part.status and bill.first.number != bill.number %}<span class="wn-clock"><span class="wn-bit">First fitted <a class="wn-jump" href="#bill-{{ bill.first.number }}">{{ bill.first.number }}</a>{% if bill.age %} ·{% endif %}</span>{% if bill.age %} <b class="wn-bit">{{ bill.age }}</b>{% endif %}</span>{% endif %}
+        {% if part.newer %}<span class="wn-newer">Newer one on {{ part.newer }}</span>{% endif %}
+    </div>
+    {% if part.status == 'claiming' %}
+    <a class="wn-state wn-state-open" href="{% url 'warranty_card' part.claim.pk %}">{% if part.round_label %}{{ part.round_label }} open{% else %}Being claimed{% endif %} · {{ part.claim.number }}</a>
+    {% elif part.status == 'replaced' %}
+    <a class="wn-state" href="#bill-{{ part.claim.number }}">Replaced · {{ part.claim.number }}</a>
+    {% else %}
+    <form method="post"
+          data-confirm="{{ part.name }}{% if bill.first.number != bill.number %}, first fitted on{% else %} from{% endif %} {{ bill.first.number }} · {{ bill.first.date|date:'j M Y' }}{% if bill.age %} · {{ bill.age }}{% endif %}.{% if part.round_label %} It was replaced under an earlier claim, so this is the {{ part.round_label }} on this part.{% endif %} A warranty card opens for it."
+          data-confirm-title="{% if part.round_label %}Make the {{ part.round_label }}?{% else %}Claim this part?{% endif %}"
+          data-confirm-icon="bi-shield-check"
+          data-confirm-theme="info"
+          data-confirm-ok="Claim">
+        {% csrf_token %}<input type="hidden" name="part" value="{{ part.key }}">
+        <button type="submit" class="wn-claim" aria-label="Claim {{ part.name }}">{% if part.round_label %}{{ part.round_label|capfirst }}{% else %}Claim{% endif %}</button>
+    </form>
+    {% endif %}
+</div>

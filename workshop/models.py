@@ -981,6 +981,23 @@ def live_cards(through=''):
     return models.Q(**{through + 'is_deleted': False})
 
 
+def bill_cards(through=''):
+    """
+    Which job cards are BILLS — `live_cards()` without the warranty cards. A
+    `Q`, shaped like `live_cards()`, and `JobCard.is_bill` is the same rule for
+    a card already in hand.
+
+    THE ONE ANSWER for every screen that lists or counts bills: Pending Bills,
+    All Invoices, Deep Analysis's job counts and averages and How Customers
+    Paid, the estimate's price hint. A warranty card is free work because of an
+    earlier bill: ₹0 by the server's rule and never settled, so counted as a
+    bill it would dilute every average and sit as "unsettled" for ever. Its
+    COST still reaches the Profit page through its parts, which are read by
+    route and date, never through this.
+    """
+    return live_cards(through) & models.Q(**{through + 'kind': JobCard.KIND_JOB})
+
+
 class JobCard(CarColourMixin, models.Model):
     # What counts as a discount worth an owner's attention. Shared by
     # `audit_high_discounts`, the HIGH_DISCOUNT notification and the settlement
@@ -1020,7 +1037,49 @@ class JobCard(CarColourMixin, models.Model):
         null=True,
         help_text="Auto-generated bill number (e.g. JB-26-001)"
     )
-    
+
+    # WHAT KIND OF CARD THIS IS — a JOB, or WARRANTY work (2026-10-02, the
+    # owners' design). A warranty card is free work on a car because of an
+    # EARLIER bill: a part that failed, or our own work done again. It is a job
+    # card in every other way — mechanic, concerns, parts, stock draws, photos,
+    # the shop's ledger and the Profit page's parts cost all work unchanged —
+    # which is the whole safety of it: no second copy of any money code.
+    #
+    # Three things differ, and `save()` and `update_totals()` hold them:
+    #   * its own number series, WR-YY-NNN, never a JB number;
+    #   * the customer pays nothing — the bill is ₹0, always;
+    #   * it is never settled, so it never enters a bill list.
+    # Every rule about opening one is `workshop/warranty.py`.
+    #
+    # `editable=False` on both: no form may post them. A card's kind is decided
+    # once, when `warranty.open_claim()` creates it.
+    KIND_JOB = 'JOB'
+    KIND_WARRANTY = 'WARRANTY'
+    KIND_CHOICES = [
+        (KIND_JOB, 'Job'),
+        (KIND_WARRANTY, 'Warranty'),
+    ]
+    WARRANTY_PREFIX = 'WR'
+    kind = models.CharField(
+        max_length=10, choices=KIND_CHOICES, default=KIND_JOB, db_default=KIND_JOB,
+        db_index=True, editable=False,
+        help_text="JOB, or WARRANTY — free work because of an earlier bill"
+    )
+    # WARRANTY cards only: the NUMBER of the earlier bill this work is free
+    # because of — a job card's (JB or WR) or an Excel-era old bill's. A number
+    # and not a foreign key, because a JB number exists ONCE across job cards
+    # and old bills (see `workshop/old_bills.py`), so it names either exactly,
+    # and the Old Bills table stays connected to nothing. Picked from the car's
+    # own bills, never typed.
+    warranty_for = models.CharField(
+        max_length=20, blank=True, null=True, editable=False, db_index=True,
+        help_text="WARRANTY cards only: the earlier bill's number (e.g. JB-26-007)"
+    )
+
+    @property
+    def is_warranty(self):
+        return self.kind == self.KIND_WARRANTY
+
     # Dates
     admitted_date = models.DateField(db_index=True)
     completed_date = models.DateField(db_index=True, blank=True, null=True, help_text="Auto-filled when job is marked as Completed")
@@ -1038,6 +1097,11 @@ class JobCard(CarColourMixin, models.Model):
     def is_live(self):
         """`live_cards()` for a card already in hand — never `not card.is_deleted`."""
         return not self.is_deleted
+
+    @property
+    def is_bill(self):
+        """`bill_cards()` for a card already in hand: live, and not a warranty card."""
+        return self.is_live and not self.is_warranty
 
 
     # Vehicle Details (Text fields with Autocomplete)
@@ -1220,12 +1284,50 @@ class JobCard(CarColourMixin, models.Model):
         # Normalize fields regardless of whether called via form or directly
         self.clean()
         from django.db import transaction
-        
+
+        # ⚠ A WARRANTY CARD NEVER CHARGES THE CUSTOMER AND IS NEVER SETTLED.
+        # Held here, on every save, rather than trusted to the screens: a
+        # crafted POST, the settle view, a fleet move or a management command
+        # all end in this method, and none of them can leave a warranty card
+        # holding money. Its COST is untouched — the shop price, transport and
+        # stock on its rows are real money out, and reach the Profit page the
+        # way any job card's parts do.
+        if self.is_warranty:
+            self.labour_amount = Decimal('0')
+            self.total_bill_amount = Decimal('0')
+            self.received_amount = Decimal('0')
+            self.discount_amount = Decimal('0')
+            self.payment_status = 'PENDING'
+            self.payment_method = None
+            self.paid_date = None
+            self.bulk_payer = None
+
         if not self.bill_number:
             with transaction.atomic():
                 # Get year (2 digits)
                 year = str(self.admitted_date.year)[2:]  # 2026 → "26"
-                prefix = f'JB-{year}-'
+
+                # TWO SERIES. A warranty card counts WR-YY-NNN on its own, from
+                # 001 every January like JB — and the Excel floor and the old
+                # bills belong to the JB series alone, because the Excel years
+                # never wrote a warranty number.
+                if self.is_warranty:
+                    prefix = f'{self.WARRANTY_PREFIX}-{year}-'
+                    max_num = 0
+                    old_numbers = []
+                else:
+                    prefix = f'JB-{year}-'
+                    # ⚠ It starts from the LAST EXCEL BILL, not from 0, in the
+                    # year the system went live — the Excel bills used this same
+                    # JB-YY-NNN sequence, and a customer must never hold two
+                    # different bills with one number. And it also skips numbers
+                    # an OLD BILL holds. Both rules live in `workshop/old_bills.py`.
+                    max_num = live_numbering_floor(year)
+                    old_numbers = list(
+                        OldBill.objects
+                        .filter(bill_number__startswith=prefix)
+                        .values_list('bill_number', flat=True)
+                    )
 
                 # Find the highest existing bill number for this year — computed
                 # NUMERICALLY, not by text ordering.
@@ -1240,13 +1342,6 @@ class JobCard(CarColourMixin, models.Model):
                 # select_for_update() locks the year's rows so two job cards created
                 # concurrently can't be assigned the same number (effective on
                 # PostgreSQL; a harmless no-op on SQLite).
-                #
-                # ⚠ It starts from the LAST EXCEL BILL, not from 0, in the year
-                # the system went live — the Excel bills used this same JB-YY-NNN
-                # sequence, and a customer must never hold two different bills
-                # with one number. And it also skips numbers an OLD BILL holds.
-                # Both rules live in `workshop/old_bills.py`.
-                max_num = live_numbering_floor(year)
                 existing_numbers = [
                     existing_bill.bill_number
                     for existing_bill in (
@@ -1254,11 +1349,7 @@ class JobCard(CarColourMixin, models.Model):
                         .filter(bill_number__startswith=prefix)
                         .only('bill_number')
                     )
-                ] + list(
-                    OldBill.objects
-                    .filter(bill_number__startswith=prefix)
-                    .values_list('bill_number', flat=True)
-                )
+                ] + old_numbers
                 for existing_number in existing_numbers:
                     try:
                         n = int(existing_number.rsplit('-', 1)[-1])
@@ -1284,12 +1375,18 @@ class JobCard(CarColourMixin, models.Model):
         """
         from django.db.models import Sum
         from django.db.models.functions import Coalesce
-        
-        spare_total = self.spares.aggregate(total=Coalesce(Sum('total_price'), 0, output_field=models.DecimalField()))['total']
 
-        # Labour is ONE figure on this row, not a sum over the job lines. It used
-        # to be Sum(labours.amount); the lines no longer carry money.
-        new_total = spare_total + (self.labour_amount or Decimal('0'))
+        if self.is_warranty:
+            # ⚠ ALWAYS ₹0 — the customer pays nothing for warranty work. Not
+            # summed from the rows at all, so no figure that reached a row by
+            # any route can put a charge on the card. (`save()` holds the rest.)
+            new_total = Decimal('0')
+        else:
+            spare_total = self.spares.aggregate(total=Coalesce(Sum('total_price'), 0, output_field=models.DecimalField()))['total']
+
+            # Labour is ONE figure on this row, not a sum over the job lines. It
+            # used to be Sum(labours.amount); the lines no longer carry money.
+            new_total = spare_total + (self.labour_amount or Decimal('0'))
         if self.total_bill_amount != new_total:
             self.total_bill_amount = new_total
             # Use update to avoid triggering save() recursion if called from save()
@@ -1341,17 +1438,36 @@ class JobCard(CarColourMixin, models.Model):
         Used by jobcard_create, jobcard_edit, and undo_completed so all three
         entry points that can put a car "on the floor" agree on what counts as
         a conflict, instead of each re-implementing (or skipping) the check.
+
+        ⚠ JOB CARDS ONLY. A warranty card never blocks a job card, and a job
+        card never blocks a warranty card: paid work and free work for one car
+        are two cards, side by side, by design. Warranty cards answer their
+        own rule — one open claim per PART (`warranty.open_claim`) — and
+        `open_conflict()` picks the right one for a card in hand.
         """
         if not registration_number:
             return None
         qs = cls.objects.filter(
             live_cards(),
+            kind=cls.KIND_JOB,
             registration_number__iexact=registration_number.strip(),
             completed=False,
         )
         if exclude_pk:
             qs = qs.exclude(pk=exclude_pk)
         return qs.first()
+
+    def open_conflict(self):
+        """
+        The OTHER card that stops this one going back on the floor, by its own
+        kind's rule — a job card by its plate, a warranty card by the PART it
+        claims (`warranty.reopen_conflict`). For the doors that put a card back
+        on the floor without knowing which kind it is (Undo Completion).
+        """
+        if self.is_warranty:
+            from .warranty import reopen_conflict   # warranty.py imports models
+            return reopen_conflict(self)
+        return JobCard.get_active_conflict(self.registration_number, exclude_pk=self.pk)
 
     def __str__(self):
         return f"{self.bill_number or f'#{self.id}'}"
@@ -1504,6 +1620,24 @@ class JobCardSpareItem(models.Model):
     received_date = models.DateField(blank=True, null=True, db_index=True, help_text="Auto-filled when status → RECEIVED")
     original_vehicle_info = models.CharField(max_length=255, blank=True, null=True, help_text="Stores car details if unassigned from a job card")
 
+    # ⚠ WARRANTY — WHICH PART THIS ONE REPLACES (2026-10-07). Set only on a
+    # warranty card's claimed part, and only by `warranty.open_claim`: the exact
+    # part it was claimed for — a part on an earlier job card or warranty card
+    # (`replaces`), or a line of an Excel-era old bill (`replaces_line`). ONE
+    # CLAIM IS ONE PART, and this link is what lets the claim screen say a part
+    # is already being claimed or was replaced, and send a second failure to
+    # the replacement rather than back to the old bill. Not editable: no form
+    # can write it. SET_NULL — the claimed part keeps its own name, shop and
+    # quantity, and its card keeps the earlier bill's number.
+    replaces = models.ForeignKey(
+        'self', on_delete=models.SET_NULL, null=True, blank=True, editable=False,
+        related_name='replaced_by',
+        help_text="Warranty: the earlier part this claimed part replaces")
+    replaces_line = models.ForeignKey(
+        'OldBillPartLine', on_delete=models.SET_NULL, null=True, blank=True, editable=False,
+        related_name='replaced_by',
+        help_text="Warranty: the Excel-era old bill line this claimed part replaces")
+
     def save(self, *args, **kwargs):
         if self.spare_part_name:
             self.spare_part_name = self.spare_part_name.strip()
@@ -1567,6 +1701,17 @@ class JobCardSpareItem(models.Model):
         # leaving a stale one.
         if self.customer_rate is not None and self.quantity is not None:
             self.total_price = (self.customer_rate * self.quantity).quantize(Decimal('0.01'))
+
+        # ⚠ A PART ON A WARRANTY CARD IS NEVER CHARGED TO THE CUSTOMER — its
+        # customer price is ₹0 ("given away", the meaning a stored zero already
+        # has here), whatever was posted. Without this the card's bill would
+        # still read ₹0 (`update_totals` ignores the rows) while Deep Analysis
+        # counted a row's price as parts sold. The COST side — shop price,
+        # transport, the shelf's average — is left exactly as it is: that is
+        # the warranty's real cost.
+        if self.job_card_id and self.job_card.is_warranty:
+            self.customer_rate = None
+            self.total_price = Decimal('0')
 
         # Transport belongs to a SHOP row only. A warehouse draw's delivery was
         # paid on the Supplies Shop bill that put it on the shelf, so a figure

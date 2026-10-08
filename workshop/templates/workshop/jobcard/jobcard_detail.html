@@ -197,6 +197,18 @@ the four values removed — see the view.
         color: #334155;
         white-space: nowrap;
     }
+    /* The warranty link line, under the plate and the number. */
+    .dv-wr {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.3rem 0.45rem;
+        margin: 0.45rem 0 0;
+        font-size: 0.82rem;
+        color: var(--color-text-muted);
+    }
+    .dv-wr a { color: var(--wr-ink); font-weight: 700; }
+
     .dv-no {
         font-family: var(--font-display);
         font-size: 0.7rem;
@@ -405,6 +417,9 @@ the four values removed — see the view.
         color: var(--color-success, #16a34a);
         line-height: 1.1;
     }
+    /* A warranty card earns nothing, so its headline is the fact rather than
+       a green ₹0 — in the app's one warranty colour (`--wr-*`, style.css). */
+    .dv-bill-wr { color: var(--wr-ink); }
     .dv-got  { font-size: 0.95rem; font-weight: 700; color: #16a34a; }
     .dv-owed { font-size: 0.95rem; font-weight: 700; color: #dc2626; }
     .dv-off  { font-size: 0.95rem; font-weight: 600; color: #94a3b8; }
@@ -800,9 +815,15 @@ parent is not fixed, so the label is plain "Back" and the view resolves
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end dv-menu">
                     <li>
+                        {% if jobcard.is_warranty %}
+                        <a class="dropdown-item" href="{% url 'warranty_slip' jobcard.pk %}?back={{ request.get_full_path|urlencode }}">
+                            <i class="bi bi-shield-check"></i> Warranty slip
+                        </a>
+                        {% else %}
                         <a class="dropdown-item" href="{% url 'invoice_view' jobcard.pk %}?back={{ request.get_full_path|urlencode }}">
                             <i class="bi bi-receipt"></i> Invoice
                         </a>
+                        {% endif %}
                     </li>
                     <li>
                         <a class="dropdown-item" href="{% url 'jobcard_edit' jobcard.pk %}">
@@ -829,6 +850,18 @@ parent is not fixed, so the label is plain "Back" and the view resolves
             {% if jobcard.brand_name or jobcard.model_name %}<span class="dv-reg">{{ jobcard.registration_number }}</span>{% endif %}
             {% if jobcard.bill_number %}<span class="dv-no">{{ jobcard.bill_number }}</span>{% endif %}
         </p>
+
+        {% comment %}
+        THE WARRANTY LINK, whichever end this card is. A warranty card names the
+        bill it is for, linked (this page is Office's and an owner's, as is the
+        earlier bill's own page); the earlier bill names every warranty card
+        opened against it. Both are lookups — the earlier bill stores nothing.
+        {% endcomment %}
+        {% if jobcard.is_warranty %}
+        <p class="dv-wr"><span class="wr-badge">Warranty</span><span>for {% if warranty_bill %}<a href="{{ warranty_bill.url }}?back={{ request.get_full_path|urlencode }}">{{ warranty_bill.number }}</a> · {{ warranty_bill.date|date:"d M Y" }}{% else %}{{ jobcard.warranty_for }}{% endif %}</span></p>
+        {% elif warranty_claims %}
+        <p class="dv-wr"><span class="wr-badge">Warranty</span><span>→ {% for claim in warranty_claims %}<a href="{% url 'jobcard_detail' claim.pk %}?back={{ request.get_full_path|urlencode }}">{{ claim.number }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</span></p>
+        {% endif %}
 
         {% comment %}
         Which car this is beyond the plate — the chassis code, then the VIN —
@@ -867,6 +900,11 @@ parent is not fixed, so the label is plain "Back" and the view resolves
 
         {% if jobcard.notes %}<p class="dv-line3">{{ jobcard.notes }}</p>{% endif %}
 
+        {% if jobcard.is_warranty %}
+        <div class="dv-money">
+            <span class="dv-bill dv-bill-wr">No charge</span>
+        </div>
+        {% else %}
         <div class="dv-money">
             <span class="dv-bill">₹{{ jobcard.get_total_amount|floatformat:0|intcomma }}</span>
             {% if jobcard.received_amount and jobcard.received_amount != jobcard.get_total_amount %}
@@ -887,6 +925,7 @@ parent is not fixed, so the label is plain "Back" and the view resolves
                 {% else %}Pending{% endif %}
             </span>
         </div>
+        {% endif %}
     </div>
 
     {% comment %}

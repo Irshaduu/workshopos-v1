@@ -299,9 +299,15 @@ family is on these two numbers; the reasoning lives beside the rule.
                                 </a>
                             </li>
                             <li>
+                                {% if job.is_warranty %}
+                                <a class="dropdown-item" href="{% url 'warranty_slip' job.pk %}?back={{ request.get_full_path|urlencode }}">
+                                    <i class="bi bi-shield-check"></i> Warranty slip
+                                </a>
+                                {% else %}
                                 <a class="dropdown-item" href="{% url 'invoice_view' job.pk %}?back={{ request.get_full_path|urlencode }}">
                                     <i class="bi bi-receipt"></i> View Invoice
                                 </a>
+                                {% endif %}
                             </li>
                             {% if request.user|has_group:"Office" or request.user|has_group:"Owner" or request.user.is_superuser %}
                             <li><hr class="dropdown-divider"></li>
@@ -317,7 +323,7 @@ family is on these two numbers; the reasoning lives beside the rule.
 
                 <!-- Second Row: Registration Number -->
                 <div class="mb-1">
-                    <span class="jl-reg">{{ job.registration_number }}</span>
+                    <span class="jl-reg">{{ job.registration_number }}</span>{% if job.is_warranty %} <span class="wr-badge">Warranty</span>{% endif %}
                 </div>
 
                 <!-- Footer -->

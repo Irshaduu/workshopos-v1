@@ -3,7 +3,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from django.db.models import Q
 from django.http import JsonResponse
 
-from ..models import CarBrand, CarModel, SparePart, ConcernSolution, JobCardSpareItem
+from ..models import CarBrand, CarModel, SparePart, ConcernSolution, JobCardSpareItem, bill_cards
 from ..decorators import staff_required, office_required, is_office_or_owner
 from ..invoice import effective_quantity
 from ..known_car import known_car
@@ -189,7 +189,11 @@ def spare_price_hint(request):
     # UPPER(spare_part_name), not a change of rule.
     rows = (
         JobCardSpareItem.objects
-        .filter(spare_part_name__iexact=name, total_price__isnull=False, total_price__gt=0)
+        # Bills only: a warranty part is ₹0 to the customer and would drag
+        # the suggestion down. (`total_price__gt=0` already drops it; the rule
+        # is stated anyway, so it does not hang on that coincidence.)
+        .filter(bill_cards('job_card__'),
+                spare_part_name__iexact=name, total_price__isnull=False, total_price__gt=0)
         .order_by('-pk')
         .values_list('total_price', 'quantity')[:PRICE_HINT_SAMPLE]
     )

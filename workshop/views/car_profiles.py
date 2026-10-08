@@ -9,6 +9,7 @@ from django.db.models import Count, Max, Prefetch, Q, Sum, F, DecimalField
 from django.db.models.functions import Coalesce, Greatest, TruncDate
 from django.core.paginator import Paginator
 
+from .. import warranty
 from ..analysis_engine import MONEY, PART_COST
 from ..models import (
     JobCard, JobCardConcern, JobCardLabourItem, JobCardSpareItem, OldBill,
@@ -129,7 +130,12 @@ def car_profile_list(request):
             Coalesce(Max('completed_date'), Max('admitted_date')),
             Coalesce(Max(TruncDate('paid_date')), Max('admitted_date')),
         ),
-        latest_id=Max('id')
+        latest_id=Max('id'),
+        # Whether the car is in the workshop now, counted rather than read off
+        # the newest card: a warranty card and a job card can both be open on
+        # one car, so the newest card being finished no longer means the car
+        # has left. Same grouped query, no extra trip.
+        open_cards=Count('id', filter=Q(completed=False) & live_cards()),
     ).order_by('-last_activity', '-latest_id')
 
     # 2. The search term, read from the URL on EVERY request — not only on the
@@ -172,6 +178,7 @@ def car_profile_list(request):
         for word in q.split():
             matching = matching.filter(
                 Q(registration_number__icontains=word) |
+                Q(bill_number__icontains=word) |
                 Q(customer_name__icontains=word) |
                 Q(brand_name__icontains=word) |
                 Q(model_name__icontains=word) |
@@ -184,6 +191,7 @@ def car_profile_list(request):
         for word in q.split():
             matching_old = matching_old.filter(
                 Q(registration_number__icontains=word) |
+                Q(bill_number__icontains=word) |
                 Q(customer_name__icontains=word) |
                 Q(brand_name__icontains=word) |
                 Q(model_name__icontains=word)
@@ -286,14 +294,13 @@ def car_profile_list(request):
                 # which is a different fact from "nobody wrote it down".
                 'has_color': bool(jc.car_color),
                 'is_white': jc.car_color == 'White',
-                # Whether this car is in the workshop RIGHT NOW. Only one job
-                # card per registration can be active at a time (the hard block
-                # in `get_active_conflict`), and `latest_id` is that card when
-                # there is one, so this needs no extra query. It is the single
-                # most useful thing a list of cars can tell you — "is this one
-                # of the cars I am looking after today?" — and it was not on the
-                # page at all.
-                'on_floor': (not jc.completed) and jc.is_live,
+                # Whether this car is in the workshop RIGHT NOW — the single
+                # most useful thing a list of cars can tell you, "is this one of
+                # the cars I am looking after today?". Counted in the grouped
+                # query (`open_cards`), never read off the newest card: a
+                # warranty card can be open beside a job card on one car, so
+                # the newest card being finished does not mean the car left.
+                'on_floor': car['open_cards'] > 0,
             })
 
     context = {
@@ -370,6 +377,12 @@ def car_profile_detail(request, registration):
             Sum('total_bill_amount', filter=Q(completed=False) & live_cards()),
             ZERO, output_field=total_field,
         ),
+        # Is the car in the workshop, and is a BILL being built while it is?
+        # Two counts, because a warranty card can be open on its own or beside
+        # a job card: the car is on the floor either way, but only a job card
+        # has a bill for the "On the floor" money tile to report.
+        open_cards=Count('id', filter=Q(completed=False) & live_cards()),
+        open_jobs=Count('id', filter=Q(completed=False, kind=JobCard.KIND_JOB) & live_cards()),
     )
 
     # OLD BILLS — this car's bills from the Excel years. Listed on their own,
@@ -425,6 +438,16 @@ def car_profile_detail(request, registration):
         # then prints what was typed rather than inventing a reading.
         bill.km = parse_km(bill.mileage)
 
+    # WARRANTY — which warranty cards point at each bill on this page, so the
+    # earlier bill's row can name them (a shield and "WR-26-003"). One query, read by
+    # lookup: the earlier bill stores nothing (`warranty.claims_for`).
+    claims = warranty.claims_for(
+        [bill.bill_number for bill in visits] + [old.bill_number for old in old_bills])
+    for bill in visits:
+        bill.claims = claims.get(bill.bill_number, [])
+    for old in old_bills:
+        old.claims = claims.get(old.bill_number, [])
+
     # ---- gross profit, OWNER ONLY -------------------------------------
     #
     # Not merely hidden from Office in the template: not computed at all, so
@@ -444,6 +467,14 @@ def car_profile_detail(request, registration):
             .values_list('job_card_id', 'cost')
         )
         for bill in visits:
+            if bill.is_warranty:
+                # A warranty card earns nothing by design, so a "gross" figure
+                # would read as a loss on every one. Its row prints what it
+                # COST instead — the same parts cost, under its own word. The
+                # car's headline below still counts it: that cost is real.
+                bill.warranty_cost = per_card.get(bill.pk, ZERO)
+                bill.gross_profit = bill.gross_profit_pct = None
+                continue
             revenue = (bill.total_bill_amount or ZERO) - (bill.discount_amount or ZERO)
             bill.gross_profit, bill.gross_profit_pct = _gross_profit(
                 revenue, per_card.get(bill.pk, ZERO))
@@ -497,9 +528,11 @@ def car_profile_detail(request, registration):
         # `vehicle_ids.latest_recorded`, which the Job Card form's lookup reads
         # too, so the header and the form cannot name two different VINs.
         **latest_recorded(registration),
-        # Only one job card per registration can be active at a time, and the
-        # newest is it when there is one.
-        'on_floor': bool(latest) and (not latest.completed) and latest.is_live,
+        # Counted, never read off the newest card — see `open_cards` above.
+        # `on_floor_bill` gates the money tile: an open warranty card alone
+        # has no bill to report "so far".
+        'on_floor': money['open_cards'] > 0,
+        'on_floor_bill': money['open_jobs'] > 0,
         'visits': total_visits,
         'old_bills': len(old_bills),
         'old_bills_total': sum((old.total_amount for old in old_bills), ZERO),
@@ -825,9 +858,10 @@ def car_all_invoices(request, registration):
 
     Completed visits only, again matching the service history — a car still on
     the floor has a total that is not final, so its bill is not a bill yet.
+    And BILLS only (`is_bill`): a warranty card has no bill, it has a slip.
     """
     all_cards, old_bills = _history_records(registration)
-    cards = [card for card in all_cards if card.completed and card.is_live]
+    cards = [card for card in all_cards if card.completed and card.is_bill]
     cards.sort(key=lambda card: (card.admitted_date, card.pk), reverse=True)
 
     # The car's OLD BILLS follow, newest first — all older than any job card, so

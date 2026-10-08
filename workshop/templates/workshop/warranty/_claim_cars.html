@@ -1,0 +1,20 @@
+{% comment %}
+New claim's car list — the cards and their pager. Rendered inside the page,
+and alone for the live search (an XMLHttpRequest), so the list typed into and
+the list loaded are one markup. Each car carries this list's own address as
+`?back=`, so the parts screen's Back lands on the same narrowed list.
+{% endcomment %}
+{% if cars %}
+<div class="wn-cars">
+    {% for car in cars %}
+    <a class="wn-car" href="{% url 'warranty_start' car.plate %}?back={{ request.get_full_path|urlencode }}">
+        {% if car.car %}<span class="wn-car-name">{{ car.car }}</span>{% endif %}
+        <span class="wn-plate">{{ car.plate }}</span>
+        <span class="wn-meta">Last bill {{ car.last|date:"j M Y" }} · {{ car.bills }} bill{{ car.bills|pluralize }}</span>
+    </a>
+    {% endfor %}
+</div>
+{% include 'workshop/includes/pagination.html' %}
+{% else %}
+<p class="wn-empty">{% if q %}No car with a finished bill matches “{{ q }}”.{% else %}No car has a finished bill yet.{% endif %}</p>
+{% endif %}

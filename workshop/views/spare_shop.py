@@ -976,6 +976,17 @@ def spare_shop_unassign_item(request, item_pk):
     item = get_object_or_404(JobCardSpareItem, pk=item_pk)
     shop_id = item.shop_id
     if request.method == 'POST':
+        # A warranty claim's part is the claim (one claim is one part): it goes
+        # with its card, through Cancel claim, and never to the Hub.
+        if item.job_card and item.job_card.is_warranty:
+            messages.error(request, "A claimed part stays on its warranty card — cancel the claim instead.")
+            return redirect('warranty_card', pk=item.job_card.pk)
+        # And a part a claim was made ON stays on its bill: the claim points at it.
+        claim = (JobCardSpareItem.objects.filter(replaces=item, job_card__isnull=False)
+                 .values_list('job_card__bill_number', flat=True).first())
+        if claim:
+            messages.error(request, f"'{item.spare_part_name}' is claimed under warranty on {claim} — it stays on this bill.")
+            return redirect('jobcard_edit', pk=item.job_card.pk) if item.job_card else redirect('home')
         if not shop_id:
             messages.error(request, "Cannot unassign an item that isn't linked to a Spare Shop.")
             if item.job_card:

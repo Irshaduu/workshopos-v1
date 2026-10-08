@@ -1,0 +1,360 @@
+{% comment %}
+==========================================================================
+THE DATE CHIP — one spare row's two dates behind one chip
+==========================================================================
+Shared by the Job Card and the warranty card, so the two pages draw ONE
+control (the `.rpay-*` rule: a control drawn by more than one template gets
+one declaration). Moved here unchanged from the Job Card on 2026-10-08.
+
+The markup each row carries:
+
+    <div class="jc-dates">
+      <button type="button" class="jc-date-chip" aria-haspopup="dialog" aria-expanded="false">
+        <i class="bi bi-calendar-range"></i><span class="jc-date-chip-text"></span>
+      </button>
+      <div class="jc-date-pop" hidden role="dialog" aria-label="Ordered and received dates">
+        <div class="jc-date-field"><label>Ordered</label> the ordered_date input (.ordered-date)</div>
+        <div class="jc-date-field"><label>Received</label> the received_date input (.received-date)</div>
+        <p class="jc-date-warn" hidden aria-live="polite"></p>
+        <button type="button" class="jc-date-done">Done</button>
+      </div>
+    </div>
+
+Everything is DELEGATED off `document`, so a row added later needs nothing
+re-initialised. `window.refreshDateChips()` relabels every chip — call it
+after filling a date box in script, which fires no event.
+==========================================================================
+{% endcomment %}
+<style>
+    /* ==========================================================
+       THE TWO SPARE DATES SHARE ONE CELL
+       ==========================================================
+       They were two full-width columns costing ~300px of a table that already
+       scrolls sideways on the Floor tablet, and they are blank on most rows —
+       `spare_autofill.js` fills them from the Status dropdown, so they are
+       derived far more often than they are typed. Stacked at the small size the
+       pair costs ~150px instead, which buys back a column's worth of scroll for
+       about 28px of row height.
+
+       Both stay real, visible, always-editable inputs. Revealing only the one
+       that matches the current status was considered and dropped: correcting an
+       ordered date on an already-received row would then need the box revealing
+       first, which is logic on the busiest form in the app. */
+    .jc-dates { min-width: 132px; }
+
+    /* The chip. What the column shows when nobody is editing it: one line
+       reading "22/07 → 29/07", or the half of it that exists, or an invitation
+       when neither does. A `type="button"` — inside a form, a bare <button>
+       submits it. */
+    .jc-date-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        width: 100%;
+        min-height: 38px;              /* the Floor tablet's tap target */
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        background: var(--color-card);
+        color: var(--color-text);
+        font-size: 0.78rem;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        cursor: pointer;
+        /* Paint and transform only. Never `transition: all` on a control in
+           this codebase — CLAUDE.md records the afternoon that cost. */
+        transition: border-color .15s ease, background-color .15s ease;
+    }
+    .jc-date-chip:hover { border-color: var(--color-primary); }
+    .jc-date-chip:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+    .jc-date-chip .bi { color: var(--color-text-muted); font-size: 0.85rem; }
+    .jc-date-chip--empty { color: var(--color-text-muted); }
+    .jc-date-chip[aria-expanded="true"] {
+        border-color: var(--color-primary);
+        background: var(--color-primary-light);
+    }
+
+    {% comment %}
+    ── A pair that cannot be right, said WHILE it is typed ────────────
+
+    `workshop/spare_dates.pair_problem` refuses "ordered 2026, received 2025" on
+    the server and that is still the rule. This only saves the round trip — and
+    what the round trip cost was the whole complaint: the card came back
+    unsaved, several screens long, with a red banner at the top, a red summary
+    box under it and the reason spelled out inside a field label. Four pieces of
+    furniture for one mistyped digit, none of them beside the box that has it.
+
+    Shown here instead: one short line inside the panel, the moment both boxes
+    disagree. The chip turns red too, because the panel is shut most of the time
+    and the row has to say something on its own.
+
+    It is NOT `required` and it does not block the submit — a browser
+    constraint on these boxes breaks the form in two documented ways (see the
+    Inventory quantity guard). The server is what refuses; this is what means
+    nobody gets that far.
+    {% endcomment %}
+    .jc-date-chip--bad {
+        border-color: #dc2626;
+        background: #fef2f2;
+        color: #b91c1c;
+    }
+    .jc-date-chip--bad .bi { color: #dc2626; }
+    .jc-date-warn {
+        margin-top: 0.55rem;
+        font-size: 0.72rem;
+        font-weight: 700;
+        line-height: 1.3;
+        color: #b91c1c;
+    }
+    .jc-date-warn[hidden] { display: none; }
+
+    /* ==========================================================
+       THE POPOVER IS `position: fixed`, AND THAT IS THE WHOLE TRICK
+       ==========================================================
+       It lives inside a `<td>` inside `.table-responsive`, which is
+       `overflow-x: auto` — the exact shape that clips an absolutely-positioned
+       panel, invisibly and only sometimes, which is the `.cb-list` trap
+       CLAUDE.md already records an afternoon for. `fixed` is not clipped by an
+       ancestor's overflow at all; it is only trapped by an ancestor with a
+       `transform` / `filter` / `will-change` / `contain`, and there is none
+       between this cell and the root — measured, not assumed, before this was
+       built.
+
+       Being fixed also means it does not participate in layout, so opening it
+       cannot move a single row of the job card. That was the requirement.
+
+       The inputs inside it are the REAL form fields and post exactly as before;
+       a hidden panel still submits its values. Nothing about the data changed —
+       only where the boxes are shown. */
+    .jc-date-pop {
+        position: fixed;
+        z-index: 1035;                 /* over the sticky header (100), under
+                                          Bootstrap's modals (1055) */
+        width: 226px;
+        padding: 0.7rem;
+        background: var(--color-card);
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, .16);
+    }
+    .jc-date-pop[hidden] { display: none; }
+    .jc-date-pop label {
+        display: block;
+        font-size: 0.68rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        color: var(--color-text-muted);
+        margin-bottom: 0.15rem;
+    }
+    .jc-date-pop .jc-date-field + .jc-date-field { margin-top: 0.55rem; }
+    .jc-date-pop input[type="date"] { font-size: 0.82rem; }
+    .jc-date-done {
+        width: 100%;
+        margin-top: 0.7rem;
+        min-height: 34px;
+        border: 0;
+        border-radius: 8px;
+        background: var(--color-primary);
+        color: #fff;
+        font-size: 0.78rem;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    {% comment %}
+    Done greys out while the pair cannot be right, on the owner's request.
+
+    Be clear about what it is and is not. It is NOT a lock: the panel still
+    closes on Escape and on a tap outside, and it has to — a popover whose only
+    exit is conditional on its contents is a trap, and on a phone the way out of
+    a trap is reloading the page and losing the card. What it is, is the primary
+    control refusing to agree with you, at the moment and in the place the
+    mistake was made. The row keeps its red chip after the panel closes and the
+    save is still refused server-side, so nothing here is the enforcement.
+
+    Guarded against one real hazard: this is `type="button"`, so a disabled
+    state cannot swallow a submit. If it ever becomes the submit button, this
+    rule has to go — see the sticky save button's note about `setTimeout(0)`.
+    {% endcomment %}
+    .jc-date-done:disabled {
+        background: #e2e8f0;
+        color: #94a3b8;
+        cursor: not-allowed;
+    }
+    @media (hover: none) { .jc-date-chip { min-height: 44px; } }
+</style>
+<script>
+(function () {
+    'use strict';
+    // ==========================================================
+    // THE DATE CHIP
+    // ==========================================================
+    // One line in the column, both dates behind it. Everything here is
+    // DELEGATED off `document` — no per-row wiring at all — which is what makes
+    // a row added by "+ Add Spare" work with nothing re-initialised. All three
+    // of the cloning traps CLAUDE.md records live in per-element setup; this
+    // section simply has none to get wrong.
+
+    function dayMonth(value) {           // '2026-07-22' -> '22/07'
+        if (!value) return '';
+        var parts = value.split('-');
+        return parts.length === 3 ? parts[2] + '/' + parts[1] : '';
+    }
+
+    // Today as the same 'YYYY-MM-DD' the inputs carry. Built from the LOCAL
+    // parts, never `toISOString()`, which converts to UTC first and so reports
+    // yesterday for the whole of an IST morning — a part received this morning
+    // would be refused as being in the future.
+    function todayISO() {
+        var d = new Date();
+        function two(n) { return (n < 10 ? '0' : '') + n; }
+        return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate());
+    }
+
+    // The browser half of `workshop/spare_dates.pair_problem`, in the same
+    // order and with the same words. The server is still what refuses a save;
+    // this is what means nobody reaches that screen for a mistyped year.
+    //
+    // ISO dates compare correctly as strings — same length, most significant
+    // part first — so there is no Date parsing here and no timezone to get
+    // wrong.
+    function pairProblem(ordered, received) {
+        var today = todayISO();
+        if (ordered && ordered > today) return 'Ordered date is in the future.';
+        if (received && received > today) return 'Received date is in the future.';
+        if (ordered && received && received < ordered) {
+            return 'Arrived before it was ordered — fix the date.';
+        }
+        return '';
+    }
+
+    function refreshChips() {
+        // `document`, not `form`: the `#empty-spare-form` template lives
+        // outside the form and is cloned on "+ Add Spare", so its chip has to
+        // be labelled too or an added row opens reading nothing.
+        var cells = document.querySelectorAll('.jc-dates');
+        for (var i = 0; i < cells.length; i++) {
+            var cell = cells[i];
+            var text = cell.querySelector('.jc-date-chip-text');
+            if (!text) continue;
+            var rawOrdered = (cell.querySelector('.ordered-date') || {}).value || '';
+            var rawReceived = (cell.querySelector('.received-date') || {}).value || '';
+            var ordered = dayMonth(rawOrdered);
+            var received = dayMonth(rawReceived);
+            var chip = cell.querySelector('.jc-date-chip');
+            var blank = !ordered && !received;
+
+            // Say it here, beside the two boxes, rather than letting the save
+            // come back refused with the reason four screens up the page.
+            var problem = pairProblem(rawOrdered, rawReceived);
+            var warn = cell.querySelector('.jc-date-warn');
+            if (warn) {
+                warn.textContent = problem;
+                warn.hidden = !problem;
+            }
+            // Done refuses while the pair cannot be right. Not a lock — Escape
+            // and a tap outside still close the panel, deliberately — but the
+            // button that means "this is settled" should not say so when it is
+            // not. See `.jc-date-done:disabled`.
+            var done = cell.querySelector('.jc-date-done');
+            if (done) done.disabled = !!problem;
+            // A missing half prints an ellipsis rather than being dropped, so
+            // the chip always says WHICH date is the one you have.
+            text.textContent = blank ? 'Add dates'
+                                     : (ordered || '…') + ' – ' + (received || '…');
+            if (!chip) continue;
+            chip.classList.toggle('jc-date-chip--empty', blank);
+            // The panel is shut most of the time, so the row has to carry the
+            // problem on its own. Red outranks the "unfilled" hairline below:
+            // a pair that is wrong is a different thing from a pair that is
+            // incomplete, and it is the one worth interrupting for.
+            chip.classList.toggle('jc-date-chip--bad', !!problem);
+            // The hairline clears only when BOTH dates are in, on the owner's
+            // instruction: a spare is finished when it has been ordered AND
+            // received, so one of the two is still incomplete rather than
+            // half-done. The two inputs inside the panel carry their own marks,
+            // which is what says which of them is the one missing.
+            chip.classList.toggle('jc-empty', !(ordered && received));
+        }
+        // The warning line changes the open panel's HEIGHT, and the panel is
+        // `fixed` — so it is placed, not laid out, and a panel that was flipped
+        // above its chip would grow off the bottom of the screen. Re-place it.
+        // `openDates` and `placePop` are both hoisted; this runs before either
+        // line is reached on the first pass and is a no-op then.
+        if (openDates) placePop(openDates.chip, openDates.pop);
+    }
+
+    var openDates = null;
+
+    function placePop(chip, pop) {
+        pop.hidden = false;                       // must be laid out to measure
+        var r = chip.getBoundingClientRect();
+        var w = pop.offsetWidth, h = pop.offsetHeight;
+        // Flip above the chip when there is no room below, then CLAMP to the
+        // viewport — the same thing Popper does for a dropdown, in eight lines,
+        // and without the dependency this codebase has a rule against.
+        //
+        // The clamp is not belt-and-braces on the flip: a chip taller than the
+        // space either side of it (a short phone in landscape, the keyboard
+        // up) satisfies neither branch, and without the clamp the panel is
+        // placed off screen with no way to reach it.
+        var left = Math.min(Math.max(8, r.left), window.innerWidth - w - 8);
+        var top = r.bottom + 6;
+        if (top + h > window.innerHeight - 8) top = r.top - h - 6;
+        top = Math.min(Math.max(8, top), Math.max(8, window.innerHeight - h - 8));
+        pop.style.left = left + 'px';
+        pop.style.top = top + 'px';
+    }
+
+    function closeDates() {
+        if (!openDates) return;
+        openDates.pop.hidden = true;
+        openDates.chip.setAttribute('aria-expanded', 'false');
+        openDates = null;
+    }
+
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest) return;
+        var chip = e.target.closest('.jc-date-chip');
+        if (chip) {
+            var pop = chip.parentElement.querySelector('.jc-date-pop');
+            var reopening = openDates && openDates.chip === chip;
+            closeDates();
+            if (!reopening && pop) {
+                // `nearest` on both axes: if the chip is already fully visible
+                // this scrolls nothing at all, and if it is half off the side of
+                // the table it brings just that chip in rather than jumping the
+                // page. A panel is positioned against the chip, so the chip has
+                // to be somewhere a person can see before it is placed.
+                chip.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+                openDates = { chip: chip, pop: pop };
+                placePop(chip, pop);
+                chip.setAttribute('aria-expanded', 'true');
+            }
+            return;
+        }
+        if (e.target.closest('.jc-date-done')) { closeDates(); return; }
+        // Anywhere else, as long as it is not inside the open panel.
+        if (openDates && !e.target.closest('.jc-date-pop')) closeDates();
+    });
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') closeDates();
+    });
+    // The panel is `fixed`, so it is pinned to the viewport rather than to the
+    // chip — it has to be told when the chip moves. Capture on scroll, because
+    // the move that matters most is the TABLE's own sideways scroll, and that
+    // does not bubble.
+    function followChip() { if (openDates) placePop(openDates.chip, openDates.pop); }
+    window.addEventListener('scroll', followChip, true);
+    window.addEventListener('resize', followChip);
+
+    // A Bootstrap modal opening over an open panel (the status-revert dialog
+    // lives in these same rows) would leave it stranded on top of the backdrop.
+    document.addEventListener('show.bs.modal', closeDates);
+
+    window.refreshDateChips = refreshChips;
+    document.addEventListener('DOMContentLoaded', refreshChips);
+}());
+</script>

@@ -142,6 +142,18 @@ urlpatterns = [
     # bills are what they are.
     path('car-profiles/<str:registration>/invoices/',
          views.car_all_invoices, name='car_all_invoices'),
+    # NEW CLAIM: pick the car, then tick the part that failed on one of its
+    # bills. The Car Profile's Warranty button opens the second step directly.
+    path('warranty/new/', views.warranty_new, name='warranty_new'),
+    path('warranty/new/<str:registration>/', views.warranty_start, name='warranty_start'),
+    # The Warranty page: what is waiting on a shop, and every warranty card.
+    path('warranty/', views.warranty_list, name='warranty_list'),
+    # One warranty card — the page a claim is worked on. `jobcard_edit` sends
+    # every warranty card here.
+    path('warranty/<int:pk>/', views.warranty_card, name='warranty_card'),
+    path('warranty/<int:pk>/cancel/', views.warranty_cancel, name='warranty_cancel'),
+    # A warranty card's paper — the invoice's doors lead here for one.
+    path('jobcards/<int:pk>/warranty-slip/', views.warranty_slip, name='warranty_slip'),
 
     # ------------------
     # INVOICE

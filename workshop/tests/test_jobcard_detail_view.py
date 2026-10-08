@@ -388,13 +388,13 @@ class ThePageIsDataWithNoLabelsTests(DetailBase):
         on its own, so a pair straddling New Year prints one short and one long
         rather than hiding the crossing.
         """
-        from workshop.views.jobcard import _short_date
+        from workshop.spare_dates import short_date
 
-        self.assertEqual(_short_date(date(2026, 7, 16), 2026), '16/07')
-        self.assertEqual(_short_date(date(2025, 12, 30), 2026), '30/12/2025')
-        self.assertEqual(_short_date(None, 2026), '—')
+        self.assertEqual(short_date(date(2026, 7, 16), 2026), '16/07')
+        self.assertEqual(short_date(date(2025, 12, 30), 2026), '30/12/2025')
+        self.assertEqual(short_date(None, 2026), '—')
         # No card year to compare against — say it in full rather than guess.
-        self.assertEqual(_short_date(date(2026, 7, 16), None), '16/07/2026')
+        self.assertEqual(short_date(date(2026, 7, 16), None), '16/07/2026')
 
     def test_half_a_date_pair_still_prints_as_a_pair(self):
         """

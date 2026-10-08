@@ -1,0 +1,387 @@
+{% extends 'workshop/base.html' %}
+{% load custom_filters %}
+
+{% block title %}Warranty{% endblock %}
+
+{% block content %}
+{% comment %}
+==========================================================================
+THE WARRANTY PAGE — every warranty card, and what is still waiting
+==========================================================================
+Office and Owner, from the drawer. Two parts, top to bottom:
+
+* WAITING ON THE SHOP — every warranty part with no Shop Price yet (blank is
+  waiting, ₹0 is free, an amount is what the shop charged). Oldest first and
+  NEVER filtered by the search or the period below: an unanswered claim must
+  not drop out of sight because somebody narrowed the list. Each row opens the
+  card's FORM, because that is where the shop's answer is typed. Absent when
+  nothing is waiting.
+* EVERY WARRANTY CARD, newest first, with a search and This Year / All Time.
+  The heading's count and cost are over exactly the cards listed.
+
+Plain links and a plain GET form; nothing here needs a script.
+==========================================================================
+{% endcomment %}
+<div class="wl-page">
+
+    <header class="wl-hero">
+        {% comment %} The one way into a new claim, beside the title at every width — the Estimates rule: the row never becomes a column. {% endcomment %}
+        <div class="wl-hero-top">
+            <h1><i class="bi bi-shield-check" aria-hidden="true"></i> Warranty <span class="wl-count">{{ count }}</span></h1>
+            <a class="wl-new" href="{% url 'warranty_new' %}"><i class="bi bi-plus-lg" aria-hidden="true"></i><span>New claim</span></a>
+        </div>
+        <p class="wl-sum">{% if cost %}₹{{ cost|inr }} warranty cost{% else %}No warranty cost{% endif %} · {{ filter_label }}</p>
+    </header>
+
+    {% if waiting %}
+    <section class="wl-sec" aria-labelledby="wlWait">
+        <h2 class="wl-h2" id="wlWait"><i class="bi bi-hourglass-split" aria-hidden="true"></i> Waiting on the shop <span class="wl-n">{{ waiting|length }}</span></h2>
+        <div class="wl-list">
+            {% for spare in waiting %}
+            <a class="wl-row" href="{% url 'warranty_card' spare.job_card_id %}">
+                <span class="wl-main">
+                    <span class="wl-l1"><b>{{ spare.spare_part_name|default:"Unnamed part" }}</b><span class="wl-shop">{% if spare.shop %}{{ spare.shop.name }}{% else %}No shop{% endif %}</span></span>
+                    <span class="wl-l2">{{ spare.job_card.bill_number }} · {% if spare.job_card.brand_name or spare.job_card.model_name %}{{ spare.job_card.brand_name }} {{ spare.job_card.model_name }} · {% endif %}{{ spare.job_card.registration_number }}</span>
+                </span>
+                <span class="wl-side"><span class="wl-age">{{ spare.age }}</span></span>
+            </a>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="wl-sec" aria-labelledby="wlAll">
+        <h2 class="wl-h2" id="wlAll">Warranty cards</h2>
+
+        {% comment %}
+        The app's own search box, live as you type (the script at the foot), and
+        the period as two pills that refresh the list the same way. Both stay
+        plain links and a plain GET form underneath, so without the script Enter
+        still searches and a pill still opens its period.
+        {% endcomment %}
+        <div class="wl-controls">
+            <form id="wlSearchForm" class="wl-search" method="get" role="search">
+                <i class="bi bi-search search-icon" aria-hidden="true"></i>
+                <input type="text" id="wlSearch" name="q" class="wl-search-input" value="{{ q }}"
+                       placeholder="WR, JB, plate, car" aria-label="Search warranty cards" autocomplete="off">
+                <input type="hidden" id="wlFilter" name="filter" value="{{ filter_type }}">
+            </form>
+            <div class="wl-pills" role="group" aria-label="Period">
+                {% for key, label in filters %}<a class="wl-pill{% if key == filter_type %} is-on{% endif %}" data-filter="{{ key }}" href="?filter={{ key }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}"{% if key == filter_type %} aria-current="true"{% endif %}>{{ label }}</a>{% endfor %}
+            </div>
+        </div>
+
+        <div id="wlResults">{% include "workshop/warranty/_warranty_cards.html" %}</div>
+    </section>
+</div>
+
+<style>
+    .wl-page { max-width: 760px; }
+
+    .wl-hero { margin-bottom: 1.1rem; }
+
+    .wl-hero h1 {
+        display: flex;
+        align-items: center;
+        gap: .45rem;
+        margin: 0;
+        font-size: 1.35rem;
+        font-weight: 800;
+        letter-spacing: -.01em;
+    }
+
+    .wl-hero h1 i { color: var(--wr-ink); font-size: 1.15rem; }
+
+    .wl-hero-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+
+    .wl-new {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        flex-shrink: 0;
+        height: 40px;
+        padding: 0 14px;
+        border-radius: 12px;
+        background: var(--wr-ink);
+        color: #fff;
+        font-size: .88rem;
+        font-weight: 700;
+        text-decoration: none;
+    }
+
+    @media (hover: hover) { .wl-new:hover { background: var(--wr-ink-deep); color: #fff; } }
+    @media (hover: none) { .wl-new { height: 44px; } }
+
+    .wl-count {
+        padding: .05rem .5rem;
+        border: 1px solid var(--wr-line);
+        border-radius: 999px;
+        background: var(--wr-tint);
+        color: var(--wr-ink);
+        font-size: .75rem;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .wl-sum {
+        margin: .3rem 0 0;
+        font-size: .88rem;
+        font-weight: 600;
+        color: var(--color-text-muted);
+        font-variant-numeric: tabular-nums;
+    }
+
+    .wl-sec { margin-bottom: 1.5rem; }
+
+    .wl-h2 {
+        display: flex;
+        align-items: center;
+        gap: .4rem;
+        margin: 0 0 .6rem;
+        font-size: .95rem;
+        font-weight: 700;
+    }
+
+    .wl-h2 i { color: #b45309; }
+
+    .wl-n {
+        padding: 0 .45rem;
+        border-radius: 999px;
+        background: #fffbeb;
+        color: #b45309;
+        font-size: .72rem;
+        font-weight: 700;
+    }
+
+    .wl-list {
+        display: flex;
+        flex-direction: column;
+        gap: .5rem;
+    }
+
+    /* One row shape for both lists: what it is and whose car on the left, the
+       figure or the wait on the right. 44px at the least — tapped on a phone. */
+    .wl-row {
+        display: flex;
+        align-items: center;
+        gap: .75rem;
+        min-height: 44px;
+        padding: .65rem .85rem;
+        background: var(--color-card);
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        color: var(--color-text);
+        text-decoration: none;
+    }
+
+    @media (hover: hover) { .wl-row:hover { background: var(--color-hover); color: var(--color-text); } }
+    .wl-row:active { background: var(--color-hover); }
+
+    /* `min-width: 0` so a long car name wraps inside the row instead of
+       pushing the figure off the card. */
+    .wl-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .1rem; }
+
+    .wl-l1 {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: .1rem .5rem;
+        font-size: .92rem;
+    }
+
+    .wl-l1 b { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .wl-date, .wl-shop { font-size: .8rem; color: var(--color-text-muted); }
+
+    .wl-floor {
+        padding: .05rem .4rem;
+        border: 1px solid #fde68a;
+        border-radius: 999px;
+        background: #fffbeb;
+        color: #b45309;
+        font-size: .62rem;
+        font-weight: 700;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+    }
+
+    .wl-l2 { font-size: .78rem; color: var(--color-text-muted); overflow-wrap: anywhere; }
+
+    .wl-side {
+        flex: none;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: .15rem;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .wl-cost { font-size: .92rem; font-weight: 700; }
+    .wl-age { font-size: .8rem; font-weight: 600; color: #b45309; white-space: nowrap; }
+
+    .wl-chip {
+        padding: .05rem .45rem;
+        border-radius: 999px;
+        font-size: .62rem;
+        font-weight: 700;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+    }
+
+    .wl-chip-wait { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+    .wl-chip-free { background: var(--wr-tint); color: var(--wr-ink); border: 1px solid var(--wr-line); }
+
+    /* The search and the period on one row; the search takes what is left. */
+    .wl-controls {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        margin-bottom: .75rem;
+    }
+
+    /* THE APP'S SEARCH BOX — Completed's own values, copied, never
+       approximated (Car Profiles copies them the same way, and a test holds
+       all of them to Completed's). Live as you type. */
+    .wl-search {
+        position: relative;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .wl-search .search-icon {
+        position: absolute;
+        left: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--color-text-muted);
+        font-size: 0.75rem;
+        pointer-events: none;
+    }
+
+    .wl-search-input {
+        width: 100%;
+        height: 40px;
+        box-sizing: border-box;
+        border: 1px solid var(--color-border);
+        border-radius: 999px;
+        background: var(--color-card);
+        font-size: 0.8rem;
+        color: var(--color-text);
+        padding: 0 14px 0 32px;
+        outline: none;
+        transition: border-color 0.15s, box-shadow 0.15s;
+        box-shadow: 0 1px 3px var(--color-shadow);
+    }
+
+    .wl-search-input:focus {
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    .wl-search-input::placeholder { color: var(--color-text-muted); }
+
+    .wl-pills {
+        flex: none;
+        display: flex;
+        padding: 3px;
+        border: 1px solid var(--color-border);
+        border-radius: 999px;
+        background: var(--color-card);
+    }
+
+    .wl-pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 34px;
+        padding: 0 .75rem;
+        border-radius: 999px;
+        color: var(--color-text-muted);
+        font-size: .8rem;
+        font-weight: 700;
+        text-decoration: none;
+        white-space: nowrap;
+    }
+
+    .wl-pill.is-on { background: var(--wr-ink); color: #fff; }
+    @media (hover: none) { .wl-pill { min-height: 38px; } }
+
+    .wl-empty {
+        margin: .25rem 0;
+        padding: 1rem;
+        border: 1px dashed var(--color-border);
+        border-radius: 12px;
+        color: var(--color-text-muted);
+        font-size: .85rem;
+        text-align: center;
+    }
+</style>
+<script>
+/* LIVE SEARCH — Completed's own pattern: TYPING waits 300ms, a tap does not;
+   each request carries its number and a stale reply is dropped, so a slow
+   answer for "KL" never lands after the one for "KL 10"; the URL follows, so
+   a refresh, Back and the pager keep the search. */
+document.addEventListener('DOMContentLoaded', function () {
+    const input = document.getElementById('wlSearch');
+    const form = document.getElementById('wlSearchForm');
+    const results = document.getElementById('wlResults');
+    if (!input || !form || !results) return;
+    const filterBox = document.getElementById('wlFilter');
+    let currentFilter = filterBox ? filterBox.value : 'this_year';
+    let timer = null;
+    let seq = 0;
+
+    function update(page, event) {
+        if (event && event.type === 'submit') event.preventDefault();
+        const url = new URL(window.location.href);
+        url.searchParams.set('q', input.value);
+        url.searchParams.set('filter', currentFilter);
+        if (page && String(page) !== '1') url.searchParams.set('page', page);
+        else url.searchParams.delete('page');
+        const delay = (event && event.type === 'input') ? 300 : 0;
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(function () {
+            const mine = ++seq;
+            const done = window.navProgress ? window.navProgress.begin() : function () {};
+            fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(function (res) { return res.text(); })
+                .then(function (html) {
+                    if (mine !== seq) return;
+                    results.innerHTML = html;
+                    window.history.pushState({}, '', url);
+                    // The heading's count and cost follow the list.
+                    const totals = document.getElementById('wlTotals');
+                    if (totals) {
+                        document.querySelector('.wl-count').textContent = totals.dataset.count;
+                        document.querySelector('.wl-sum').textContent = totals.dataset.sum;
+                    }
+                })
+                .catch(function (err) { console.error('Search error:', err); })
+                .finally(done);
+        }, delay);
+    }
+
+    input.addEventListener('input', function (e) { update(1, e); });
+    form.addEventListener('submit', function (e) { update(1, e); });
+    results.addEventListener('click', function (e) {
+        const link = e.target.closest('.page-link');
+        if (!link || link.parentElement.classList.contains('disabled')) return;
+        e.preventDefault();
+        update(new URL(link.href).searchParams.get('page'));
+        document.getElementById('wlAll').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    document.querySelectorAll('.wl-pill[data-filter]').forEach(function (pill) {
+        pill.addEventListener('click', function (e) {
+            e.preventDefault();
+            currentFilter = pill.dataset.filter;
+            if (filterBox) filterBox.value = currentFilter;
+            document.querySelectorAll('.wl-pill[data-filter]').forEach(function (other) {
+                const on = other === pill;
+                other.classList.toggle('is-on', on);
+                if (on) other.setAttribute('aria-current', 'true');
+                else other.removeAttribute('aria-current');
+            });
+            update(1);
+        });
+    });
+});
+</script>
+{% endblock %}

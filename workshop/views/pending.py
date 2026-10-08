@@ -8,7 +8,7 @@ from django.db.models import (
 from django.db.models.functions import Coalesce
 from django.core.paginator import Paginator
 
-from ..models import JobCard, JobCardSpareItem
+from ..models import JobCard, JobCardSpareItem, bill_cards
 from ..decorators import office_required
 
 
@@ -37,7 +37,10 @@ def pending_payments_list(request):
     # — that counts every unsettled card, fleet and still-on-the-floor
     # included. The two were already different (this page excludes fleet), and
     # the subtitle under the title says which question this one answers.
+    # Bills only (`bill_cards`): a warranty card is ₹0 and never settled, so
+    # it would sit here as "pending" for ever with nothing to chase.
     pending_jobs = JobCard.objects.filter(
+        bill_cards(),
         completed=True,
         payment_status__in=['PENDING', 'PARTIAL'],
     ).exclude(bulk_payer__isnull=False)

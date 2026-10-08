@@ -1,0 +1,31 @@
+{% load custom_filters %}
+{% comment %}
+The Warranty page's list — the cards, their pager, and the figures the heading
+shows (`#wlTotals`), which follow the search and the period. Rendered inside
+the page, and alone for the live search (an XMLHttpRequest), so the list typed
+into and the list loaded are one markup.
+{% endcomment %}
+<span id="wlTotals" hidden data-count="{{ count }}" data-sum="{% if cost %}₹{{ cost|inr }} warranty cost{% else %}No warranty cost{% endif %} · {{ filter_label }}"></span>
+    <div class="wl-list">
+        {% for card in cards %}
+        <a class="wl-row" href="{% url 'jobcard_detail' card.pk %}?back={{ request.get_full_path|urlencode }}">
+            <span class="wl-main">
+                <span class="wl-l1"><b>{{ card.bill_number }}</b><span class="wl-date">{{ card.admitted_date|date:"j M Y" }}</span>{% if not card.completed %}<span class="wl-floor">On the floor</span>{% endif %}</span>
+                <span class="wl-l2"><b class="wl-part">{{ card.claimed_name }}</b> · for {{ card.warranty_for }} · {% if card.brand_name or card.model_name %}{{ card.brand_name }} {{ card.model_name }} · {% endif %}{{ card.registration_number }}</span>
+            </span>
+            {% comment %}
+            What it cost, and the shop's answer in one word when there is
+            something to say: WAITING while any part has no Shop Price, FREE
+            when every part came at ₹0. A card with no parts says nothing.
+            {% endcomment %}
+            <span class="wl-side">
+                {% if card.cost %}<span class="wl-cost">₹{{ card.cost|inr }}</span>{% endif %}
+                {% if card.waiting %}<span class="wl-chip wl-chip-wait">Waiting</span>{% elif card.cost == 0 %}<span class="wl-chip wl-chip-free">Free</span>{% endif %}
+            </span>
+        </a>
+        {% empty %}
+        <p class="wl-empty">{% if q %}No warranty card matches “{{ q }}”.{% elif filter_type == 'this_year' %}No warranty cards this year.{% else %}No warranty cards yet.{% endif %}</p>
+        {% endfor %}
+    </div>
+
+    {% include 'workshop/includes/pagination.html' %}

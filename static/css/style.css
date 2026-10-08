@@ -1382,3 +1382,40 @@ form[data-ws-busy="1"] .js-ws-submit {
     color: #b91c1c;
     font-size: 0.85rem;
 }
+
+/* -------------------------------------------------------------------------
+   WARRANTY — one colour wherever a warranty card is named (2026-10-02)
+   -------------------------------------------------------------------------
+   A warranty card is free work on a car because of an EARLIER bill. It is
+   TEAL because every other colour here already means something: green and
+   red are the direction of MONEY, blue is a button, amber is "you changed
+   this" or "under way". Declared once, read by every screen that names one.
+
+   Measured: --wr-ink carries white at 5.47:1 and sits on --wr-tint at
+   5.25:1 — both over the 4.5:1 that small bold text needs.
+   ------------------------------------------------------------------------- */
+:root {
+    --wr-ink: #0f766e;
+    --wr-ink-deep: #115e59;
+    --wr-tint: #f0fdfa;
+    --wr-line: #99f6e4;
+}
+
+/* The WARRANTY chip — beside a card's number, on a row, in a heading. One
+   shape everywhere, so it is recognised before it is read. */
+.wr-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.1rem 0.45rem;
+    border: 1px solid var(--wr-line);
+    border-radius: 999px;
+    background: var(--wr-tint);
+    color: var(--wr-ink);
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1.4;
+    text-transform: uppercase;
+    white-space: nowrap;
+}

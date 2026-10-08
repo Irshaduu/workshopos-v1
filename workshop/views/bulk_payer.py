@@ -308,6 +308,16 @@ def move_jobcard_to_bulk(request):
                 )
                 return redirect('pending_payments_list')
 
+            # ⚠ A WARRANTY CARD IS NEVER BILLED TO A FLEET — it charges nothing.
+            # Refused HERE, not left to `JobCard.save()`: `job_cards.add()`
+            # writes with a bulk `.update()`, which never runs save().
+            if job_card.is_warranty:
+                messages.error(
+                    request,
+                    f"{job_card.bill_number} is a warranty card — it charges nothing, "
+                    f"so it can't go to a Fleet Account.")
+                return redirect('pending_payments_list')
+
             # Prevent moving already fully paid cards or cards already assigned
             if job_card.payment_status not in ['PENDING', 'PARTIAL'] or job_card.bulk_payer:
                 messages.error(request, "This job card cannot be assigned to a Fleet Account.")

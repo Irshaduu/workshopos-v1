@@ -112,6 +112,7 @@ class AboutPageTests(TestCase):
             'Opening Stock',        # the go-live shelf count
             'Opening Balances',     # what each shop was owed on day one
             'Old Bills',            # the Excel years, typed in
+            'Warranty',             # a free claim on an earlier bill
             'Owner Withdrawals',
             'Categories',           # the generic part name
             'Shop catalogue',       # what each shop sells

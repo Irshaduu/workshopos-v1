@@ -213,6 +213,13 @@ class Visit:
     #: An Excel bill from before the system. `number` then counts old bills
     #: only, so it prints as OLD BILL n and no VISIT number moves.
     is_old_bill: bool = False
+    #: A WARRANTY visit — free work because of an earlier bill, which is
+    #: `warranty_for`. It is a visit like any other: its parts join PART LIFE
+    #: (a refit is a fitting) and it counts in VISITS. Its amount is ₹0 by the
+    #: server's rule, so TOTAL BILLED is untouched; the sheet prints
+    #: "WARRANTY · NO CHARGE" where a bill prints its AMOUNT.
+    is_warranty: bool = False
+    warranty_for: str = ''
 
 
 @dataclass(frozen=True)
@@ -278,6 +285,8 @@ class _Record:
     #: Old bills sort before job cards on a shared day — they are older by
     #: definition — so a live card's `pk` never has to be compared with one.
     order: tuple
+    is_warranty: bool = False
+    warranty_for: str = ''
 
 
 def _record_from_card(card):
@@ -303,6 +312,8 @@ def _record_from_card(card):
         # document handed to a buyer. Zero prints nothing at all.
         discount=max(card.discount_amount or ZERO, ZERO),
         order=(card.admitted_date, 1, card.pk),
+        is_warranty=card.is_warranty,
+        warranty_for=card.warranty_for or '',
     )
 
 
@@ -658,6 +669,8 @@ def build_service_history(jobcards, current_km=None, old_bills=()):
             amount=record.amount,
             discount=record.discount,
             is_old_bill=record.is_old_bill,
+            is_warranty=record.is_warranty,
+            warranty_for=record.warranty_for,
         ))
         previous = visits[-1]
 

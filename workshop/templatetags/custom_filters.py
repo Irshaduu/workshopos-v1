@@ -35,6 +35,7 @@ DRAWER_SECTION_PREFIXES = (
     '/spare-shops/',
     '/estimates/',
     '/car-profiles/',
+    '/warranty/',
     '/old-bills/',
     '/legacy/',
     '/master-lists/',

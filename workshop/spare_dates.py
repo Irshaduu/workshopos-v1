@@ -58,3 +58,40 @@ def pair_problem(ordered, received):
     if ordered and received and received < ordered:
         return "Arrived before it was ordered — fix the date."
     return None
+
+
+def short_date(value, card_year):
+    """
+    A part's date, with the YEAR dropped when it is the card's own.
+
+    Not a formatting preference — a width fix with a measurement behind it. The
+    full pair plus a shop name ("16/07/2026 – 17/07/2026 · Spare club") is 38
+    characters and wrapped to two lines on a 375px phone, so rows in the same
+    list came out different heights and the list read as broken. Dropping a
+    year that is already stated twice in the card above takes it to 30 and it
+    fits.
+
+    The year is KEPT the moment it differs, because then it is the whole point:
+    a part ordered in December for a car admitted in January is the one case
+    where the reader must not have to assume. Both halves are compared
+    separately, so a pair that straddles New Year prints one short and one long
+    rather than hiding the crossing.
+
+    An em dash for the half not in yet: a spare is finished when it has been
+    ordered AND received, so half-filled is still incomplete — the rule the job
+    card's own date chip follows.
+    """
+    if value is None:
+        return '—'
+    if card_year is not None and value.year == card_year:
+        return value.strftime('%d/%m')
+    return value.strftime('%d/%m/%Y')
+
+
+def date_pair(ordered, received, card_year):
+    """A part's two dates as ONE item — "16/07 – 17/07" — or '' when it has
+    neither. Read by the read-only job card and the car's warranty page, so a
+    part's dates read the same on both."""
+    if not ordered and not received:
+        return ''
+    return f'{short_date(ordered, card_year)} – {short_date(received, card_year)}'

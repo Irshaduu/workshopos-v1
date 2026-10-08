@@ -1680,7 +1680,7 @@
                 {% for visit in visits %}
                 <section class="sh-visit">
                     <div class="sh-band">
-                        <span>{% if visit.is_old_bill %}OLD BILL{% else %}VISIT{% endif %} {{ visit.number }}&nbsp; ·&nbsp; {{ visit.date|date:"j M Y" }}{% if visit.bill_number %}&nbsp; ·&nbsp; {{ visit.bill_number }}{% endif %}</span>
+                        <span>{% if visit.is_old_bill %}OLD BILL{% else %}VISIT{% endif %} {{ visit.number }}&nbsp; ·&nbsp; {{ visit.date|date:"j M Y" }}{% if visit.bill_number %}&nbsp; ·&nbsp; {{ visit.bill_number }}{% endif %}{% if visit.is_warranty %}&nbsp; ·&nbsp; WARRANTY{% if visit.warranty_for %} FOR {{ visit.warranty_for }}{% endif %}{% endif %}</span>
                         <span class="sh-band-r">
                             {% if visit.reading %}{{ visit.reading|inr }} km{% elif visit.reading_text %}{{ visit.reading_text }}{% endif %}
                         </span>
@@ -1784,7 +1784,20 @@
                         working, not a total: the `.sh-calc` treatment the
                         closing block gives the same line.
                         {% endcomment %}
-                        {% if show_amount %}
+                        {% comment %}
+                        A WARRANTY VISIT closes on "WARRANTY · NO CHARGE" in the
+                        AMOUNT's own cells and shading: it bills ₹0 by the
+                        server's rule, and "AMOUNT ₹0.00" reads to a buyer as a
+                        visit nobody priced. It carries no discount either.
+                        {% endcomment %}
+                        {% if show_amount and visit.is_warranty %}
+                        <tbody class="totals">
+                            <tr>
+                                <td colspan="2" class="void"></td>
+                                <td colspan="2" class="sub-label sh-nocharge">WARRANTY · NO CHARGE</td>
+                            </tr>
+                        </tbody>
+                        {% elif show_amount %}
                         <tbody class="totals">
                             <tr>
                                 <td colspan="2" class="void"></td>

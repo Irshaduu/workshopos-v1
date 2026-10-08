@@ -8,7 +8,7 @@ from django.db.models.functions import Coalesce, Trim
 from django.core.paginator import Paginator
 
 from ..models import (
-    JobCard, JobCardConcern, JobCardLabourItem, JobCardSpareItem, live_cards,
+    JobCard, JobCardConcern, JobCardLabourItem, JobCardSpareItem, bill_cards, live_cards,
 )
 from ..decorators import office_required, staff_required
 from ..settlement import unfilled
@@ -20,6 +20,12 @@ from ..settlement import unfilled
 #: mechanic may well be looking at on the tablet, and `?mechanic=none` says what
 #: it does. `''` already means All, so the two can never collide.
 UNASSIGNED_KEY = 'none'
+
+#: `?mechanic=` value for the WARRANTY chip (2026-10-08): the board narrowed to
+#: the warranty cards on the floor. It rides the same parameter because the
+#: chip row is one choice at a time — a mechanic, the cars nobody holds, or the
+#: warranty cards.
+WARRANTY_KEY = 'warranty'
 
 
 def _floor_chips(floor, floor_count):
@@ -81,6 +87,17 @@ def _floor_chips(floor, floor_count):
     return chips
 
 
+def _warranty_chip(floor):
+    """The chip narrowing the board to its warranty cards — only while there
+    is one on the floor, like every other chip (a door with nothing behind it
+    is not drawn). Kept apart from the mechanic chips, whose counts sum to All:
+    a warranty card is already counted under its mechanic."""
+    count = floor.filter(kind=JobCard.KIND_WARRANTY).count()
+    if not count:
+        return None
+    return {'key': WARRANTY_KEY, 'name': 'Warranty', 'count': count, 'is_warranty': True}
+
+
 def _resolve_mechanic(raw, chips):
     """The requested chip's key, or `''` (All) when it names no chip on offer.
 
@@ -100,6 +117,8 @@ def _apply_mechanic(floor, key):
     """Narrow the board to one chip. `''` is All and narrows nothing."""
     if key == UNASSIGNED_KEY:
         return floor.filter(lead_mechanic__isnull=True)
+    if key == WARRANTY_KEY:
+        return floor.filter(kind=JobCard.KIND_WARRANTY)
     if key:
         return floor.filter(lead_mechanic_id=key)
     return floor
@@ -137,13 +156,14 @@ def home(request):
     # between saying whose three they are.
     floor_count = floor.count()
     chips = _floor_chips(floor, floor_count)
-    mechanic_key = _resolve_mechanic(request.GET.get('mechanic'), chips)
-    for chip in chips:
+    warranty_chip = _warranty_chip(floor)
+    mechanic_key = _resolve_mechanic(
+        request.GET.get('mechanic'), chips + ([warranty_chip] if warranty_chip else []))
+    for chip in chips + ([warranty_chip] if warranty_chip else []):
         chip['active'] = chip['key'] == mechanic_key
 
-    # Get only non-completed job cards (where completed=False)
-    # Optimized with select_related and prefetch_related for 1M+ records
-    active_jobcards = _apply_mechanic(floor, mechanic_key).select_related(
+    # Every open card the chip lets through, with what a board card prints.
+    board = _apply_mechanic(floor, mechanic_key).select_related(
         'lead_mechanic'
     ).prefetch_related(
         'concerns', 'labours', 'spares', 'spares__item', 'spares__shop'
@@ -151,6 +171,15 @@ def home(request):
         total_concerns=Count('concerns'),
         fixed_concerns=Count('concerns', filter=Q(concerns__status='FIXED'))
     ).order_by('-updated_at', '-pk')
+
+    # TWO GROUPS (2026-10-05): the job cards, then the WARRANTY cards in a
+    # group of their own under them, so free work never sits between paid work
+    # and one car in for both never shows as two look-alike cards side by
+    # side. Both obey the chip. The header's "In Workshop" and the All chip
+    # still count every open card — a car in for a warranty is in the
+    # workshop. The warranty group is not paged (there are only ever a few) and
+    # shows on the first page only, so the pager pages the job cards alone.
+    active_jobcards = board.filter(kind=JobCard.KIND_JOB)
 
     # Count completed today (Active only) — timezone.localdate() is IST-aware.
     # Deliberately NOT narrowed by the chip: it counts a different population
@@ -164,7 +193,7 @@ def home(request):
 
     # Count pending bills (Completed but not fully paid, Active only)
     pending_bills_count = JobCard.objects.filter(
-        live_cards(),
+        bill_cards(),
         payment_status__in=['PENDING', 'PARTIAL']
     ).count()
 
@@ -172,9 +201,11 @@ def home(request):
     paginator = Paginator(active_jobcards, 45)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
+    warranty_cards = (list(board.filter(kind=JobCard.KIND_WARRANTY))
+                      if page_obj.number == 1 else [])
 
     today = timezone.localdate()
-    _attach_home_live_details(page_obj.object_list, today)
+    _attach_home_live_details(list(page_obj.object_list) + warranty_cards, today)
 
     return render(request, 'workshop/dashboard/dashboard_home.html', {
         'active_jobcards': page_obj, # Pass page_obj as active_jobcards
@@ -183,7 +214,9 @@ def home(request):
         'page_obj': page_obj,
         'today': today,  # IST-aware — respects TIME_ZONE = 'Asia/Kolkata'
         'floor_count': floor_count,
+        'warranty_cards': warranty_cards,
         'mechanic_chips': chips,
+        'warranty_chip': warranty_chip,
         # Read by the shared pagination include, so page 2 keeps the filter.
         'mechanic_key': mechanic_key,
     })
@@ -253,6 +286,12 @@ def _attach_home_live_details(jobs, today):
         job.all_shop, job.shop_more = _capped(shop, HOME_SECTION_ROW_CAP)
 
         job.has_any_live_detail = bool(concerns or labours or stock or shop)
+
+        # A warranty card names the part it claims (one claim is one part),
+        # off the same prefetched rows: the one linked to the part it replaces.
+        if job.is_warranty:
+            linked = [s for s in stock + shop if s.replaces_id or s.replaces_line_id]
+            job.claimed_name = linked[0].spare_part_name if linked else ''
 
 
 def _age_label(days):

@@ -532,6 +532,17 @@ def build(theme):
             ('settle', 'SETTLEMENT CHECK', ['what is unfilled'],    FLOW['alert'])]):
         card(cid, 282 + i * 238, B1Y + 264, 230, 56, t, ch, accent=ac)
 
+    # WARRANTY (2026-10-08) - free work on a car because of an EARLIER bill, so
+    # it hangs off COMPLETED: only a finished bill can be claimed against. It
+    # sits in the clear strip under that card, inside the zone's own foot and
+    # above the trunk at y=449; no route crosses x=282..512 below the row (the
+    # two parts lanes are x=258 and x=754, the bill's drop is x=635). A warranty
+    # card is a job card underneath, so it needs no line of its own into the
+    # money - the chip says what the line cannot: the customer pays nothing.
+    card('wr', 282, B1Y + 330, 230, card_h(2), 'WARRANTY',
+         ['one claim - one part - free', 'clock from the first bill'], accent=FLOW['work'])
+    link('done', 'wr', 'work', 'b', 't', ta=0.5, tb=0.5)
+
     # =========================================================================
     # ZONE 03: BOARDS & TELEMETRY HISTORY
     # =========================================================================

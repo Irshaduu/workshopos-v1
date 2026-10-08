@@ -45,6 +45,7 @@ graph TD
     V --> W["Payment Collected"]
     W --> X["Payment Status: PENDING to PAID for a walk-in, PENDING to PARTIAL to BULK_PAID for a fleet"]
     X --> Y["Job Complete"]
+    Y -.->|"a part fails later"| Z["🛡 Office opens a WARRANTY claim — WR-26-001, one part, ₹0 (§3F)"]
 ```
 
 ---
@@ -87,6 +88,7 @@ graph TD
    - Move a part between a job card and the Unassigned Spares Hub, both ways (Move to Unassigned, Import from Unassigned) — Floor is offered neither, because an import carries the part's shop price and transport
    - Manage Master Lists (Brands, Models)
    - View Car Profiles (vehicle history)
+   - Open a **warranty claim** — one failed part from an earlier bill — and work the Warranty page: what is still waiting on a shop, every warranty card, the warranty slip handed over with the car, and Cancel claim for one opened by mistake
    - Run Data Cleanup — the one screen for spare and concern names (rename, merge, delete duplicates)
    - Manage inventory Categories (add/list/edit) + create/edit products via Supplier Shops (Add Product); all supplier-shop management
    - Record and review Cashbook entries (income & expenses ledger). Typing a wage, an owner's name or anything to do with rent here asks first — each has its own section and would land wrong in the profit figure. It only asks
@@ -101,6 +103,7 @@ graph TD
    - Use Autocomplete (search brands, models, spares, concerns)
    - View Inventory (stock levels), Low Stock, and Stock History — all **read-only** (no stock editing, no supplier-shop access)
    - Put a car On Hold / take it off hold, and Mark it Completed
+   - Work on a **warranty card** like any card — the complaint, the work done, the claimed part's dates — with no shop and no price. The board lists warranty cards in their own group under the job cards, and a **Warranty** chip narrows it to them. Opening a claim is Office's and an owner's
    - Record a purchase in the **Unassigned Spares Hub** — add only. No price box is shown and none is stored (the row is saved unpriced, and Office fills the figure in from the shop's bill); existing rows cannot be edited or deleted, and no price on the page is visible to Floor. Floor *can* fill in **Ordered For** — a free-text note saying which car the part is for ("BMW 320d"), because a part is usually ordered before there is a job card to attach it to. It is a note, not a link: it moves no money and joins nothing
 ```
 
@@ -427,6 +430,99 @@ backup restored anywhere, or the whole system moved, is still locked. Nothing
 inside the app can unlock it — correcting a figure needs
 `manage.py unlock_legacy_data --yes` on the server, and then pressing Lock again.
 Old Bills stays open.
+---
+
+## 3F. WARRANTY — FREE WORK BECAUSE OF AN EARLIER BILL
+
+A customer comes back: *"the coolant elbow you fitted has cracked — is it under
+warranty?"*. A **warranty claim** is free work on the car because of an EARLIER
+bill. It opens a **warranty card** — a job card underneath, numbered
+**WR-26-001** in its own series — that the customer pays nothing for and that is
+never settled.
+
+```
+Warranty page -> New claim -> pick the car        (or Car Profile -> Warranty)
+   the car's warranty page: every finished bill, newest first
+     JB-26-005 · 1 Sep 2026 · 1 month 7 days                      [Open]
+       Coolant elbow
+       Biljo · 01/09 – 03/09 · ₹1,450                            [Claim]
+       Water pump                                Replaced · WR-26-012
+   [Claim] -> "Claim this part?" -> Claim -> the warranty card opens
+```
+
+**One claim is one part.** Each part has its own Claim button. There is **no
+claim for the work alone** — a clamp re-tightened or an alignment redone is done
+without a card: nothing is ordered, nothing waits, nothing costs. Anything the
+repair needs that was NOT on the earlier bill goes on an ordinary job card and
+is billed.
+
+**Whether it is still covered is the owner's call.** The page shows how long ago,
+to the day ("1 month 7 days"), and the card shows the kilometres since; the
+system never decides, and there is no expiry date anywhere.
+
+What the page says about each part:
+
+| | |
+|---|---|
+| **Claim** | it can be claimed — one question, then its card opens |
+| **Being claimed · WR-…** | a claim is open on it; it cannot be claimed twice |
+| **Replaced · WR-…** | a claim on it is finished: the part on the car now is the replacement, listed under that WR bill on the same page, and a second failure is claimed **there** — its button reads "2nd claim" |
+| *Newer one on JB-…* | the same part was fitted again on a later bill — a quiet note, never a block |
+
+Under each part: **how many, the shop, the ordered and received dates and the
+shop price** — the facts in that shop's own ledger, so the owner finds the part
+there in seconds. A part's stock items fold under "Stock items", since a part off
+our own shelf is rarely claimed. A search box finds a part across every bill.
+
+**The warranty clock runs from the FIRST bill, and a claim never restarts it.** A
+part fitted on JB-26-005 and replaced on WR-26-018 is still under JB-26-005's
+warranty, so a 2nd claim's age and kilometres are measured from JB-26-005 — the
+part reads "First fitted JB-26-005 · 8 months 26 days" beside its button. The
+date under every bill's number is that bill's own date, and a warranty card's
+block (tinted) reads "20 Aug 2026 · 2nd claim · for WR-26-001". Every number in a
+claim's chain jumps to that bill's block on the same page.
+
+**The warranty card** carries only what a claim needs: today's date, mileage and
+mechanic; the complaint; the **claimed part** — the job card's own spare row with
+no customer price; the work done; photos and a note. The claimed part comes from
+the earlier bill:
+
+| the failed part was | the card gets |
+|---|---|
+| a spare-shop part | the same part and shop, ordered today, **Shop Price blank — Waiting** |
+| a stock part | a new draw of the same product off the shelf, at the shelf's cost |
+| a line of an Excel bill | a spare-shop part with no shop yet — Office picks it |
+
+The quantity may go down (one of four injectors failed), never above the bill's.
+
+**The Shop Price is the shop's answer**: blank while it has not answered, **0**
+when it replaced the part free, an amount when the workshop paid. The Warranty
+page's **Waiting on the shop** lists every claimed part still blank, oldest
+first, and is never filtered — a shop often answers after the car has gone.
+
+**Money.** The customer pays nothing: the card's bill is always ₹0, it is never
+settled, it cannot go to a Fleet Account, and it is in no bill list (Pending
+Bills, Paid Bills, All Invoices) and no average. What the shop charged, transport
+and stock are real money out and reach the Profit page as any part does; the
+Warranty page totals them. Its paper is the **warranty slip** — what was done and
+fitted, with no prices anywhere, closing on WARRANTY · NO CHARGE.
+
+**The board and the car.** Warranty cards sit in their own group under the job
+cards, and a **Warranty** chip narrows the board to them. A car can have a job
+card and a warranty card open at once — paid work and free work are two cards.
+On a Car Profile the **Warranty** button sits at the end of the visit list's
+heading; a warranty visit reads "No charge" with a Warranty badge, and a bill a
+claim was made against carries a shield and that WR number beside its own.
+
+**Cancel claim** (the card's ⋮, Office and Owner) removes a claim opened by
+mistake while the card is open and no shop or transport has been paid; a stock
+part goes back on the shelf. It is not written to Change History — no customer
+money was ever on it.
+
+**A claimed part stays put.** It cannot be deleted from its bill or moved to
+Unassigned Spares, and an Excel bill's claimed line cannot be renamed or the bill
+deleted — the claim points at it. Undo Completion on a warranty card is refused
+when a later claim has taken its part.
 
 ---
 

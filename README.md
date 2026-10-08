@@ -81,6 +81,9 @@ payroll, evidence photos and owner analytics, in one Django application.
 - Print-ready A4 invoices on the workshop's own letterhead, rendered the same on
   screen as on paper.
 - Estimates on the same letterhead, with a searchable history (`EST-26-001`).
+- **Warranty**: a part that failed after the car left is claimed on its own card
+  (`WR-26-001`) — one claim per part, free to the customer and never settled, the
+  shop's answer kept in the part's Shop Price, and a printed slip with no prices.
 - **Old Bills**: the bills written in Excel before the system, typed in so a car's
   profile, its invoices and its service history reach back to its first visit — and
   counted in no figure anywhere.

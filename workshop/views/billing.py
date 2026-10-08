@@ -87,6 +87,15 @@ def invoice_view(request, pk):
         pk=pk,
     )
 
+    # A WARRANTY CARD HAS NO BILL, it has a slip. One rule here rather than a
+    # branch at every link: the Completed list, an old bookmark and anything
+    # else that opens "the invoice" of a warranty card land on its paper, with
+    # `?back=` carried along. A ₹0 bill would read as one nobody priced.
+    if jobcard.is_warranty:
+        slip = reverse('warranty_slip', args=[jobcard.pk])
+        query = request.META.get('QUERY_STRING', '')
+        return redirect(f'{slip}?{query}' if query else slip)
+
     context = build_invoice(jobcard)
     context.update({
         # ⚠ THE SAME DICT UNDER A SECOND NAME, and both are load-bearing.
@@ -134,6 +143,19 @@ def update_bill_status(request, pk):
     """
     if request.method == 'POST':
         jobcard = get_object_or_404(JobCard, pk=pk)
+
+        # ⚠ A WARRANTY CARD IS NEVER SETTLED. The customer pays nothing for
+        # it, so there is no money to take and no discount to book — and a
+        # settled warranty card would start appearing in Paid Bills and in the
+        # Profit page's revenue. `JobCard.save()` would undo the payment state
+        # anyway; refusing here says so instead of pretending to settle.
+        if jobcard.is_warranty:
+            messages.error(
+                request,
+                f"{jobcard.bill_number} is a warranty card — the customer pays "
+                f"nothing, so there is nothing to settle."
+            )
+            return redirect('jobcard_edit', pk=pk)
 
         # Fleet-billed cards settle only through the Bulk Payer cascade
         # (bulk_payer_pay). Direct settlement here would mark this one job

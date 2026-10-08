@@ -1,0 +1,152 @@
+{% extends 'workshop/base.html' %}
+
+{% block title %}New claim{% endblock %}
+
+{% block content %}
+{% comment %}
+==========================================================================
+NEW CLAIM — step one: which car?
+==========================================================================
+Every car with a finished bill (`warranty.claimable_cars`), newest bill
+first, as cards. The search is a plain GET form, so the URL is the state and
+the pager keeps it; a car opens the parts screen with this page as its
+`?back=`. Office and Owner, like every warranty screen that opens a claim.
+==========================================================================
+{% endcomment %}
+<style>
+    .wn-page { max-width: 760px; }
+    .wn-hero { margin-bottom: 12px; }
+    .wn-hero h1 {
+        display: flex; align-items: center; gap: .45rem; margin: 0;
+        font-size: 1.35rem; font-weight: 800; letter-spacing: -.01em;
+    }
+    .wn-hero h1 i { color: var(--wr-ink); font-size: 1.15rem; }
+    .wn-sub { margin: 4px 0 0; font-size: .88rem; color: var(--color-text-muted); }
+
+    /* THE APP'S SEARCH BOX — Completed's own values, copied, never
+       approximated (Car Profiles copies them the same way, and a test holds
+       all of them to Completed's). Live as you type. */
+    .wn-search {
+        position: relative;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .wn-search .search-icon {
+        position: absolute;
+        left: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--color-text-muted);
+        font-size: 0.75rem;
+        pointer-events: none;
+    }
+
+    .wn-search-input {
+        width: 100%;
+        height: 40px;
+        box-sizing: border-box;
+        border: 1px solid var(--color-border);
+        border-radius: 999px;
+        background: var(--color-card);
+        font-size: 0.8rem;
+        color: var(--color-text);
+        padding: 0 14px 0 32px;
+        outline: none;
+        transition: border-color 0.15s, box-shadow 0.15s;
+        box-shadow: 0 1px 3px var(--color-shadow);
+    }
+
+    .wn-search-input:focus {
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    .wn-search-input::placeholder { color: var(--color-text-muted); }
+    .wn-search { margin-bottom: 12px; }
+
+    .wn-cars { display: grid; gap: 10px; grid-template-columns: 1fr; }
+    @media (min-width: 560px) { .wn-cars { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    .wn-car {
+        display: flex; flex-direction: column; gap: 2px; min-width: 0;
+        padding: 12px 14px; border: 1px solid var(--color-border); border-radius: 14px;
+        background: #fff; color: var(--color-text); text-decoration: none;
+    }
+    @media (hover: hover) { .wn-car:hover { border-color: var(--wr-line); background: var(--wr-tint); } }
+    .wn-car:active { background: var(--wr-tint); }
+    .wn-car-name { font-weight: 700; overflow-wrap: anywhere; }
+    .wn-plate { font-weight: 800; color: var(--wr-ink-deep); letter-spacing: .02em; }
+    .wn-meta { font-size: .78rem; color: var(--color-text-muted); }
+    .wn-empty { padding: 24px 12px; text-align: center; color: var(--color-text-muted); }
+</style>
+
+<div class="wn-page">
+    <a href="{% url 'warranty_list' %}" class="pg-back">
+        <i class="bi bi-arrow-left"></i><span>Warranty</span>
+    </a>
+
+    <header class="wn-hero">
+        <h1><i class="bi bi-shield-plus" aria-hidden="true"></i> New claim</h1>
+        <p class="wn-sub">Which car? Only cars with a finished bill are listed.</p>
+    </header>
+
+    <form id="wnSearchForm" class="wn-search" method="get" role="search">
+        <i class="bi bi-search search-icon" aria-hidden="true"></i>
+        <input type="text" id="wnSearch" name="q" class="wn-search-input" value="{{ q }}"
+               placeholder="Plate, car, customer, bill" aria-label="Search cars" autocomplete="off">
+    </form>
+
+    <div id="wnResults">{% include "workshop/warranty/_claim_cars.html" %}</div>
+</div>
+<script>
+/* LIVE SEARCH — Completed's own pattern: TYPING waits 300ms, a tap does not;
+   each request carries its number and a stale reply is dropped, so a slow
+   answer for "KL" never lands after the one for "KL 10"; the URL follows, so
+   a refresh, Back and the pager keep the search. */
+document.addEventListener('DOMContentLoaded', function () {
+    const input = document.getElementById('wnSearch');
+    const form = document.getElementById('wnSearchForm');
+    const results = document.getElementById('wnResults');
+    if (!input || !form || !results) return;
+    
+    let timer = null;
+    let seq = 0;
+
+    function update(page, event) {
+        if (event && event.type === 'submit') event.preventDefault();
+        const url = new URL(window.location.href);
+        url.searchParams.set('q', input.value);
+        
+        if (page && String(page) !== '1') url.searchParams.set('page', page);
+        else url.searchParams.delete('page');
+        const delay = (event && event.type === 'input') ? 300 : 0;
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(function () {
+            const mine = ++seq;
+            const done = window.navProgress ? window.navProgress.begin() : function () {};
+            fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(function (res) { return res.text(); })
+                .then(function (html) {
+                    if (mine !== seq) return;
+                    results.innerHTML = html;
+                    window.history.pushState({}, '', url);
+                    
+                })
+                .catch(function (err) { console.error('Search error:', err); })
+                .finally(done);
+        }, delay);
+    }
+
+    input.addEventListener('input', function (e) { update(1, e); });
+    form.addEventListener('submit', function (e) { update(1, e); });
+    results.addEventListener('click', function (e) {
+        const link = e.target.closest('.page-link');
+        if (!link || link.parentElement.classList.contains('disabled')) return;
+        e.preventDefault();
+        update(new URL(link.href).searchParams.get('page'));
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+    
+});
+</script>
+{% endblock %}

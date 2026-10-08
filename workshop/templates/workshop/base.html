@@ -35,7 +35,7 @@
     owners' installed PWA (never fully quit) meant a shipped fix could simply not
     arrive. Bump this number whenever you change any file under static/.
     {% endcomment %}
-    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=23">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=24">
 
     <style>
         /* ========================================== */
@@ -1857,9 +1857,19 @@ widen this and the audience together.
                 </a>
 
                 <div class="drawer-label">Records</div>
-                <a class="drawer-link accent-sky drawer-group-end{% if p|slice:':14' == '/car-profiles/' %} active{% endif %}" href="{% url 'car_profile_list' %}">
+                <a class="drawer-link accent-sky{% if p|slice:':14' == '/car-profiles/' %} active{% endif %}" href="{% url 'car_profile_list' %}">
                     <span class="drawer-ico"><i class="bi bi-car-front"></i></span>
                     Car Profiles
+                    <i class="bi bi-chevron-right drawer-chevron"></i>
+                </a>
+                {% comment %}
+                WARRANTY sits under Car Profiles — a warranty is always about one
+                car, and it is opened from that car's profile. Office/Owner,
+                matching `@office_required` on `warranty_list`.
+                {% endcomment %}
+                <a class="drawer-link accent-teal drawer-group-end{% if p|slice:':10' == '/warranty/' %} active{% endif %}" href="{% url 'warranty_list' %}">
+                    <span class="drawer-ico"><i class="bi bi-shield-check"></i></span>
+                    Warranty
                     <i class="bi bi-chevron-right drawer-chevron"></i>
                 </a>
                 {% comment %}

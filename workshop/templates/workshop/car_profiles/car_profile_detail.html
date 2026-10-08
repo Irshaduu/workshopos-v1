@@ -186,7 +186,7 @@
             "On the floor" badge's own colour on its row below. A card with
             nothing priced yet reads "Not priced", the row's own wording.
             {% endcomment %}
-            {% if car_info.on_floor %}
+            {% if car_info.on_floor_bill %}
             <div class="cd-stat cd-stat-floor">
                 <dt>On the floor</dt>
                 <dd>{% if car_info.on_floor_so_far > 0 %}₹{{ car_info.on_floor_so_far|inr }}<span class="cd-sofar">so far</span>{% else %}Not priced{% endif %}</dd>
@@ -284,9 +284,17 @@
     nothing server-side notices and the page looks almost right.
     ================================================================== {% endcomment %}
     {% if car_info.visits %}
+    {% comment %}
+    THE DOOR INTO A WARRANTY CARD sits at the end of this heading: a warranty is
+    free work because of an EARLIER visit, so it is reached from the list of
+    visits rather than from the hero, which carries the money and the two
+    customer documents. A car known only from Excel bills has no visits, so the
+    same link moves to the Old bills heading below — one door, always one.
+    {% endcomment %}
     <h2 class="cd-section">
         Visit history
         <span class="cd-section-count">{{ car_info.visits }}</span>
+        <a class="cd-section-act" href="{% url 'warranty_start' car_info.registration %}"><i class="bi bi-shield-check" aria-hidden="true"></i>Warranty</a>
     </h2>
 
     <div class="cd-list">
@@ -367,7 +375,7 @@
                 <div class="cd-visit-meta">
                     {% if bill.km %}<span>{{ bill.km|inr }} km</span>{% elif bill.mileage %}<span>{{ bill.mileage }}</span>{% endif %}
                     {% if bill.lead_mechanic %}<span>{{ bill.lead_mechanic.name }}</span>{% endif %}
-                    <span class="cd-ref">{{ bill.bill_number|default:"Not billed yet" }}</span>
+                    <span class="cd-ref">{{ bill.bill_number|default:"Not billed yet" }}{% if bill.is_warranty %} · for {{ bill.warranty_for }}{% endif %}{% for claim in bill.claims %}{% if forloop.first %} · <span class="cd-wr" title="Warranty"><i class="bi bi-shield-check" aria-hidden="true"></i><span class="visually-hidden">Warranty </span>{% else %}, {% endif %}{{ claim.number }}{% if forloop.last %}</span>{% endif %}{% endfor %}</span>
                 </div>
 
                 {% comment %}
@@ -389,7 +397,19 @@
             open that visit.
             {% endcomment %}
             <div class="cd-visit-right">
-                {% if bill.total_bill_amount > 0 %}
+                {% comment %}
+                A WARRANTY CARD SAYS "No charge" where a bill says its amount —
+                the customer pays nothing, by the server's rule, so "₹0" would
+                read as a bill nobody priced and "Not priced" as one still to
+                do. Its badge takes the STATE line, where PAID or UNPAID sits on
+                a bill: it is never settled, and on the date line beside the
+                stay and "On the floor" it wrapped onto a line of its own on a
+                phone. An owner sees what it COST in place of the gross line.
+                {% endcomment %}
+                {% if bill.is_warranty %}
+                <div class="cd-amount cd-amount-wr">No charge</div>
+                <div class="cd-state"><span class="wr-badge">Warranty</span></div>
+                {% elif bill.total_bill_amount > 0 %}
                 <div class="cd-amount">₹{{ bill.total_bill_amount|inr }}</div>
                 {% else %}
                 <div class="cd-amount cd-amount-none">Not priced</div>
@@ -461,6 +481,9 @@
                 profit. Minus signs are written as `&minus;` before the ₹, never
                 the "₹-5,000" the filter would print.
                 {% endcomment %}
+                {% if show_profit and bill.is_warranty and bill.warranty_cost %}
+                <div class="cd-gp" title="What this warranty cost the workshop">₹{{ bill.warranty_cost|inr }}<span class="cd-gp-word"> cost</span></div>
+                {% endif %}
                 {% if show_profit and bill.gross_profit is not None %}
                 {% if bill.gross_profit < 0 %}
                 <div class="cd-gp cd-gp-loss" title="Gross loss — the parts cost more than the bill">
@@ -505,6 +528,7 @@
     <h2 class="cd-section">
         Old bills
         <span class="cd-section-count cd-count-old">{{ car_info.old_bills }}</span>
+        {% if not car_info.visits %}<a class="cd-section-act" href="{% url 'warranty_start' car_info.registration %}"><i class="bi bi-shield-check" aria-hidden="true"></i>Warranty</a>{% endif %}
     </h2>
 
     <div class="cd-list cd-list-old">
@@ -521,7 +545,7 @@
                 </div>
                 <div class="cd-visit-meta">
                     {% if old.km %}<span>{{ old.km|inr }} km</span>{% elif old.mileage %}<span>{{ old.mileage }}</span>{% endif %}
-                    <span class="cd-ref">{{ old.bill_number }}</span>
+                    <span class="cd-ref">{{ old.bill_number }}{% for claim in old.claims %}{% if forloop.first %} · <span class="cd-wr" title="Warranty"><i class="bi bi-shield-check" aria-hidden="true"></i><span class="visually-hidden">Warranty </span>{% else %}, {% endif %}{{ claim.number }}{% if forloop.last %}</span>{% endif %}{% endfor %}</span>
                 </div>
             </div>
             <div class="cd-visit-right">
@@ -934,6 +958,33 @@
         padding: 0.12rem 0.5rem;
     }
 
+    /* The Warranty door, pushed to the heading's right end, in the
+       warranty's own colour (`--wr-*`, style.css). 36px for a pointer, 44px
+       under a finger — keyed on input, not width, the app's rule. */
+    .cd-section-act {
+        margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        min-height: 36px;
+        padding: 0 0.6rem;
+        border: 1px solid var(--wr-line);
+        border-radius: 9px;
+        background: var(--wr-tint);
+        color: var(--wr-ink);
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-decoration: none;
+    }
+
+    @media (hover: none) { .cd-section-act { min-height: 44px; } }
+
+    @media (hover: hover) {
+        .cd-section-act:hover { background: #ccfbf1; color: var(--wr-ink); }
+    }
+
+    .cd-section-act:active { background: #ccfbf1; }
+
     /* NOT `overflow: hidden`, however much the rounded corners want it — the
        same trap `.cb-list` documents. Nothing in this list opens a dropdown
        today, but the corners are rounded on the first and last child instead so
@@ -1199,6 +1250,15 @@
 
     /* "Not priced", never ₹0 — the same distinction the printed sheet makes
        between a part with no price and one given away. */
+    /* A warranty visit, in the app's one warranty colour (`--wr-*`,
+       style.css): "No charge" in the amount's place, and on the earlier bill's
+       job-number line a shield and the WR number — the shield is the
+       Warranty door's own glyph, and it keeps that line to one line on a
+       phone where the words did not. */
+    .cd-amount-wr { color: var(--wr-ink); }
+    .cd-wr { color: var(--wr-ink); font-weight: 700; white-space: nowrap; }
+    .cd-wr i { margin-right: 2px; }
+
     .cd-amount-none {
         font-size: 0.76rem;
         font-weight: 500;

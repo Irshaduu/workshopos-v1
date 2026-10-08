@@ -5,6 +5,9 @@
 
 {% block extra_css %}
 <style>
+    /* A warranty part's small label (2026-10-08): the shared chip, nudged off
+       the part's name. The row stays one line. */
+    .lr-wr { margin-left: 6px; vertical-align: 1px; }
     {% comment %}
     This page is read on a phone, standing up, in a hurry — an owner wants the
     live state of the workshop in one look and a short scroll. Everything here
@@ -883,7 +886,7 @@ task; here it is a hole in the books.
             {{ spare.spare_part_name|default:"Unnamed part" }}{% comment %}
             A quantity of one is not printed, the same rule the two boxes below
             follow and the same one the printed bill follows.
-            {% endcomment %}{% if spare.quantity|gt:1 %}<span class="lr-spare-qty"> &times; {{ spare.quantity|clean_qty }}</span>{% endif %}
+            {% endcomment %}{% if spare.quantity|gt:1 %}<span class="lr-spare-qty"> &times; {{ spare.quantity|clean_qty }}</span>{% endif %}{% if spare.job_card.is_warranty %}<span class="wr-badge lr-wr">Warranty</span>{% endif %}
         </span>
         <span class="lr-spare-meta">
             <span class="lr-spare-car">
@@ -936,7 +939,7 @@ task; here it is a hole in the books.
             bill follows, and the same one the home board's live details already
             used. `gt` rather than a truthiness test: blank and 1 mean the same
             thing here, and both are silent.
-            {% endcomment %}{% if spare.quantity|gt:1 %}<span class="lr-spare-qty"> &times; {{ spare.quantity|clean_qty }}</span>{% endif %}
+            {% endcomment %}{% if spare.quantity|gt:1 %}<span class="lr-spare-qty"> &times; {{ spare.quantity|clean_qty }}</span>{% endif %}{% if spare.job_card.is_warranty %}<span class="wr-badge lr-wr">Warranty</span>{% endif %}
         </span>
         {% comment %}
         The car comes before its plate: the make is what an owner reads
@@ -987,7 +990,7 @@ task; here it is a hole in the books.
             bill follows, and the same one the home board's live details already
             used. `gt` rather than a truthiness test: blank and 1 mean the same
             thing here, and both are silent.
-            {% endcomment %}{% if spare.quantity|gt:1 %}<span class="lr-spare-qty"> &times; {{ spare.quantity|clean_qty }}</span>{% endif %}
+            {% endcomment %}{% if spare.quantity|gt:1 %}<span class="lr-spare-qty"> &times; {{ spare.quantity|clean_qty }}</span>{% endif %}{% if spare.job_card.is_warranty %}<span class="wr-badge lr-wr">Warranty</span>{% endif %}
         </span>
         <span class="lr-spare-meta">
             <span class="lr-spare-car">
@@ -1068,6 +1071,7 @@ alike — as a fourth kind of spare.
                         {% endif %}
                         <span class="lr-car-sub">
                             <span class="lr-car-reg">{{ job.registration_number }}</span>
+                            {% if job.is_warranty %}<span class="wr-badge">Warranty</span>{% endif %}
                             {% if job.on_hold %}
                             <span class="lr-car-hold">On hold</span>
                             {% else %}

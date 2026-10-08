@@ -431,8 +431,12 @@ class TheSpareRowKeepsEveryFieldItPostsTests(JobCardFormBase):
         row. Verified: table height, row height and page height are identical
         with the panel open and shut.
         """
-        rule = self.source().split('.jc-date-pop {', 1)[1].split('}', 1)[0]
+        # Declared once for the Job Card and the warranty card alike.
+        with open('workshop/templates/workshop/includes/_date_chip.html', encoding='utf-8') as fh:
+            shared = fh.read()
+        rule = shared.split('.jc-date-pop {', 1)[1].split('}', 1)[0]
         self.assertIn('position: fixed', rule)
+        self.assertIn('{% include "workshop/includes/_date_chip.html" %}', self.source())
 
     def test_floor_still_posts_every_price_it_cannot_see(self):
         """
@@ -572,7 +576,9 @@ class ADatePairIsOnlyDoneWhenBothAreInTests(JobCardFormBase):
                              'until both are filled' % name)
 
     def test_the_chip_clears_only_when_both_are_filled(self):
-        source = self.source()
+        # The chip's script is shared with the warranty card (2026-10-08).
+        with open('workshop/templates/workshop/includes/_date_chip.html', encoding='utf-8') as fh:
+            source = fh.read()
         self.assertIn("chip.classList.toggle('jc-empty', !(ordered && received));", source)
 
     def test_the_panel_says_which_of_the_two_is_missing(self):

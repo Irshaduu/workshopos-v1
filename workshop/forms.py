@@ -558,6 +558,26 @@ class SourceScopedSpareFormSet(BaseInlineFormSet):
         a chained call there is a new queryset on every call, the defect above."""
         return queryset
 
+    def clean(self):
+        """
+        A part a WARRANTY CLAIM was made on stays on its bill (2026-10-07): the
+        claim points at it, and the car's warranty page reads "Replaced" or
+        "Being claimed" off that link. Checked on the FORMSET, because Django
+        does not validate a form ticked for deletion — and only for the rows
+        being deleted, so an ordinary save asks nothing.
+        """
+        super().clean()
+        for form in self.deleted_forms:
+            part = form.instance
+            if not part.pk:
+                continue
+            claim = (JobCardSpareItem.objects.filter(replaces=part, job_card__isnull=False)
+                     .values_list('job_card__bill_number', flat=True).first())
+            if claim:
+                raise forms.ValidationError(
+                    f"{part.spare_part_name or 'This part'} is claimed under warranty on "
+                    f"{claim} — it stays on this bill.")
+
     def save_new(self, form, commit=True):
         # `source` is deliberately not an editable field — a row cannot be moved
         # between routes from the UI, because that would have to move warehouse
@@ -974,7 +994,7 @@ JobCardSpareFormSet = inlineformset_factory(
             'placeholder': 'Price (₹)'
         }),
         # Both dates live behind ONE chip in the Dates column — see
-        # `.jc-date-pop` in jobcard_form.html. They stay real, always-posting
+        # `includes/_date_chip.html`, shared with the warranty card. They stay real, always-posting
         # inputs; only where they are *shown* changed. Full size rather than
         # `-sm`, because inside the popover there is room and the Floor tablet
         # wants the 38px tap target.
@@ -1046,6 +1066,248 @@ JobCardLabourFormSet = inlineformset_factory(
             'autocomplete': 'off',
         }),
     }
+)
+
+
+# =============================================================================
+# THE WARRANTY CARD (2026-10-05)
+# =============================================================================
+# A warranty card is a JobCard with kind=WARRANTY (`workshop/warranty.py`). Its
+# page carries only what a claim needs, and so do these forms — which is a
+# SAFETY rule, not tidiness: a formset field a page leaves out saves as BLANK
+# and wipes the row (the trap CLAUDE.md records). A field that is not on the
+# form at all cannot be touched by any post.
+
+
+def _tidy_qty_initial(form):
+    """A stored quantity shown the app's one way — 1.00 → "1", 1.50 → "1.5" —
+    so a box reads like every other quantity on screen. Display only."""
+    from .templatetags.custom_filters import clean_qty
+    if form.initial.get('quantity') not in (None, ''):
+        form.initial['quantity'] = str(clean_qty(form.initial['quantity']))
+
+
+def claim_limit(spare):
+    """
+    The most a claimed part may be for — the quantity of the part it replaces
+    (a blank there is one, the bill's own rule) — or None for a part with no
+    link.
+    """
+    if spare is None or not spare.pk:
+        return None
+    if spare.replaces_id:
+        earlier = spare.replaces.quantity
+    elif spare.replaces_line_id:
+        earlier = spare.replaces_line.quantity
+    else:
+        return None
+    return earlier if earlier and earlier > 0 else Decimal('1')
+
+
+def _check_claim_quantity(form, cleaned):
+    """A claim may be for FEWER than the bill had, never more."""
+    limit = claim_limit(form.instance)
+    qty = cleaned.get('quantity')
+    if limit is not None and qty is not None and qty > limit and not form.has_error('quantity'):
+        from .templatetags.custom_filters import clean_qty
+        form.add_error('quantity', f"The bill had {clean_qty(limit)} — a claim can't be for more.")
+
+
+class WarrantyCardForm(JobCardForm):
+    """
+    The warranty card's own boxes: this visit's date, mileage, mechanic and
+    note — and the make and model ONLY while the earlier bill left them blank.
+
+    An Excel bill can carry neither, and both are required on a card, so for
+    that one car the two boxes appear; once filled they are fixed like the
+    plate. Everything else a job card asks — the plate, the customer, the
+    colour, the chassis code and VIN, the labour charge — is fixed by the bill
+    being claimed or is not this card's business, so it is not a field here.
+
+    Built on `JobCardForm`, so the date rule (never in the future) and the
+    mechanic list are the job card's own, not copies.
+    """
+
+    class Meta(JobCardForm.Meta):
+        fields = ['admitted_date', 'mileage', 'lead_mechanic', 'notes',
+                  'brand_name', 'model_name']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name in ('brand_name', 'model_name'):
+            if getattr(self.instance, name, None):
+                del self.fields[name]
+        self.fields['admitted_date'].label = 'Date'
+        self.fields['lead_mechanic'].label = 'Mechanic'
+        self.fields['notes'].label = 'Note'
+        # Two rows, not the job card's one: this page has no script growing the
+        # box, and a claim's note is usually a sentence about what the shop said.
+        self.fields['notes'].widget.attrs['rows'] = 2
+
+
+class WarrantyPartForm(ShopSpareRowForm):
+    """
+    THE CLAIMED PART on a warranty card — one claim is one part (2026-10-07) —
+    drawn as the Job Card's own spare row (2026-10-08, the owners' call): Part
+    Name · Qty · Status · Shop · Dates · Shop Price · Transport, the same boxes
+    and the same rules, with no customer price (the customer pays nothing).
+
+    THE SHOP PRICE IS THE SHOP'S ANSWER, in the box that already holds it:
+    BLANK while the shop has not answered (the Warranty page's "Waiting on the
+    shop"), ₹0 when it replaced the part free, an AMOUNT when the workshop paid
+    — the shop charged, or the replacement was bought from another shop.
+    Nothing new is stored, so the shop's ledger and the Profit page read the
+    column they always did.
+
+    ⚠ SO A ₹0 MUST SURVIVE A SAVE. `_tidy_money_initial` shows a stored zero as
+    blank (right for a typed figure on a new record), and here that would turn
+    "free" back into "waiting" on the next save. The money boxes are tidied by
+    `_tidy_claim_money` instead, which keeps a zero as 0.
+
+    The NAME is the bill's: a disabled field — the posted value is ignored and
+    the stored one kept. The SHOP starts as the replaced part's own and may be
+    changed, rarely, when the replacement came from another shop (`moved_from`
+    then names the shop the part first came from). The QUANTITY may go DOWN
+    (one of four injectors failed) and never above the bill's (`claim_limit`).
+    The STATUS follows the dates by the job card's one rule — the page runs it
+    as you type (`spare_autofill.js`) and the server runs it again, so a page
+    whose script did not run still saves the right status.
+
+    Floor sees no shop and no price; their post carries the stored figures
+    back (`_floor_locked_data`).
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        name = self.fields['spare_part_name']
+        name.label = 'Part'
+        name.disabled = True
+        replaced = self.instance.replaces if self.instance.pk and self.instance.replaces_id else None
+        self.first_shop = replaced.shop if replaced is not None and replaced.shop_id else None
+        self.fields['quantity'].widget.attrs['inputmode'] = 'decimal'
+        self.fields['unit_price'].widget.attrs.update({
+            'placeholder': 'Waiting', 'inputmode': 'decimal',
+            'aria-label': "Shop Price (₹) — blank while the shop has not answered, 0 if it was free",
+        })
+        self.fields['transport_cost'].widget.attrs['inputmode'] = 'decimal'
+        # Presentation only — `pair_problem` refuses a future day. Set here,
+        # not in a widget declaration, so a long-running server does not cap
+        # the box at the day it booted.
+        for field in ('ordered_date', 'received_date'):
+            self.fields[field].widget.attrs['max'] = timezone.localdate().isoformat()
+        _tidy_claim_money(self, 'unit_price', 'transport_cost')
+        _tidy_qty_initial(self)
+
+    @property
+    def moved_from(self):
+        """The shop the part first came from, when the replacement came from
+        another — the rare case worth saying on the row — or None."""
+        if self.first_shop is None or not self.instance.shop_id:
+            return None
+        return self.first_shop if self.instance.shop_id != self.first_shop.pk else None
+
+    def clean(self):
+        cleaned = super().clean()
+        _check_claim_quantity(self, cleaned)
+        ordered, received = cleaned.get('ordered_date'), cleaned.get('received_date')
+        cleaned['status'] = 'RECEIVED' if received else 'ORDERED' if ordered else 'PENDING'
+        return cleaned
+
+
+def _tidy_claim_money(form, *names):
+    """`8500`, not `8500.00` — and a ZERO kept as `0`, never blanked: on a
+    claimed part a blank Shop Price means the shop has not answered, and ₹0
+    means it was free (`WarrantyPartForm`)."""
+    for name in names:
+        raw = form.initial.get(name)
+        if raw in (None, ''):
+            continue
+        try:
+            value = Decimal(str(raw))
+        except (InvalidOperation, TypeError, ValueError):
+            continue
+        if value.is_finite():
+            form.initial[name] = (f'{value.to_integral_value():f}'
+                                  if value == value.to_integral_value() else f'{value:.2f}')
+
+
+class WarrantyStockForm(InventoryDrawForm):
+    """
+    A claimed part that came off the workshop's own shelf — a stock part on
+    the earlier bill failed, and the workshop replaces it from its own stock
+    (the usual way for a Supplies Shop part). The PRODUCT is the bill's and
+    fixed (a disabled field); only how many may change, and never above the
+    bill's (`claim_limit`). No price boxes — the customer pays nothing
+    (`JobCardSpareItem.save()` makes a warranty row's total ₹0), and its COST
+    is the shelf's, taken on save exactly as on a job card.
+    """
+
+    class Meta(InventoryDrawForm.Meta):
+        fields = ['item', 'quantity']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['item'].disabled = True
+        _tidy_qty_initial(self)
+
+    def clean(self):
+        cleaned = super().clean()
+        _check_claim_quantity(self, cleaned)
+        return cleaned
+
+
+#: What a claimed part carries on the warranty card. The job card's widgets are
+#: reused for these, so the two pages draw one box the same way.
+WARRANTY_PART_FIELDS = ['spare_part_name', 'quantity', 'status', 'shop_name',
+                        'ordered_date', 'received_date', 'unit_price', 'transport_cost']
+
+class _NoNewRows:
+    """Only the rows already on the card are forms — a post claiming more is
+    read as no more. Not `max_num`: that is a CAP, and with `validate_max` it
+    refuses the one row that is there."""
+
+    def total_form_count(self):
+        return self.initial_form_count()
+
+
+class WarrantyClaimFormSet(_NoNewRows, ShopSpareFormSet):
+    """The claimed shop part, with the part it replaces read in the same query
+    (its shop locks the claim's, its quantity caps it)."""
+
+    def narrow_queryset(self, queryset):
+        return queryset.select_related('replaces__shop', 'replaces_line')
+
+
+class WarrantyClaimStockFormSet(_NoNewRows, InventoryDrawFormSet):
+    def narrow_queryset(self, queryset):
+        return super().narrow_queryset(queryset).select_related('replaces', 'replaces_line')
+
+
+# A claim card's part is opened WITH the card (`warranty.open_claim`) and goes
+# with it (Cancel claim) — so no row is added or removed here: no extra form,
+# no DELETE box, nothing a post can add. One claim is one part.
+WarrantyPartFormSet = inlineformset_factory(
+    JobCard,
+    JobCardSpareItem,
+    form=WarrantyPartForm,
+    formset=WarrantyClaimFormSet,
+    fields=WARRANTY_PART_FIELDS,
+    extra=0,
+    can_delete=False,
+    validate_min=False,
+    widgets={name: widget for name, widget in JobCardSpareFormSet.form._meta.widgets.items()
+             if name in WARRANTY_PART_FIELDS},
+)
+
+WarrantyStockFormSet = inlineformset_factory(
+    JobCard,
+    JobCardSpareItem,
+    form=WarrantyStockForm,
+    formset=WarrantyClaimStockFormSet,
+    fields=['item', 'quantity'],
+    extra=0,
+    can_delete=False,
+    validate_min=False,
 )
 
 

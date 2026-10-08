@@ -24,7 +24,9 @@ from django.template.defaultfilters import floatformat
 
 from ..decorators import staff_required, office_required, is_office_or_owner, is_owner
 from .. import delete_window
+from .. import warranty
 from ..return_to import safe_return
+from ..spare_dates import date_pair
 from .billing import announce_high_discount
 # The app's ONE way of printing a quantity — 1.00 → "1", 1.50 → "1.5". Imported
 # rather than restated so the read-only card cannot disagree with every other
@@ -180,8 +182,13 @@ def _collect_problems(form, formsets):
     return problems
 
 
+#: The four row sections as a job card names them, in page order.
+JOB_CARD_SECTIONS = ('Customer concern', 'Job', 'Inventory item', 'Spare part')
+
+
 def _problems_for(request, form, concern_formset, labour_formset,
-                  inventory_formset, spare_formset, subject):
+                  inventory_formset, spare_formset, subject,
+                  sections=JOB_CARD_SECTIONS):
     """
     Collect the problems AND say so where the eye already is.
 
@@ -196,14 +203,16 @@ def _problems_for(request, form, concern_formset, labour_formset,
     form this long, nobody sees either.
 
     Named in the order the sections appear on the page, so the list reads as a
-    route down it.
+    route down it. `sections` is those four names as the page calls them — the
+    warranty card calls the same four formsets Complaint, Work done, and its
+    two part formsets both Claimed part (a shop part or a stock part — one of
+    them, never both), and a summary naming a section the page does not show
+    sends the reader looking for it.
     """
-    problems = _collect_problems(form, [
-        ('Customer concern', concern_formset),
-        ('Job', labour_formset),
-        ('Inventory item', inventory_formset),
-        ('Spare part', spare_formset),
-    ])
+    problems = _collect_problems(form, list(zip(
+        sections,
+        (concern_formset, labour_formset, inventory_formset, spare_formset),
+    )))
     if problems:
         count = len(problems)
         # Short, because it is not the only thing on screen: the summary box
@@ -492,6 +501,88 @@ def _floor_locked_data(request, jobcard=None):
     return data
 
 
+def _after_parts_saved(request, jobcard, saved_concerns, saved_spares):
+    """
+    Everything that follows saving a card's rows — ONE implementation, read by
+    the job card's create and edit and by the warranty card (2026-10-05).
+
+    It was written out twice, line for line, in `jobcard_create` and
+    `jobcard_edit`; the warranty card would have made a third. Three copies of
+    the block that keeps the shop ledgers honest is how one gets fixed and two
+    do not. Runs inside the caller's transaction, in this order:
+
+      1. auto-learn: new concern and part names join the master lists, deduped
+         case-insensitively so 'Brake Pad' and 'brake pad' never become two
+         (AUD-0052);
+      2. each shop part's shop is resolved from the posted pk (AUD-0023), and
+         EVERY shop the rows touched, old and new alike, has its totals
+         refreshed;
+      3. Unassigned Hub rows this save imported are deleted, so a part is never
+         owed twice — Office and Owner only (AUD-0109);
+      4. the card's own total is recomputed: the labour charge lives on the
+         card, so no row save does it, and `update_totals()` no-ops when
+         nothing moved.
+    """
+    new_concern_texts = [c.concern_text.strip() for c in saved_concerns if c.concern_text and c.concern_text.strip()]
+    if new_concern_texts:
+        existing_concern_texts = set()
+        for t in new_concern_texts:
+            if ConcernSolution.objects.filter(concern__iexact=t).exists():
+                existing_concern_texts.add(t)
+        new_concerns = [ConcernSolution(concern=t) for t in new_concern_texts if t not in existing_concern_texts]
+        ConcernSolution.objects.bulk_create(new_concerns, ignore_conflicts=True)
+
+    new_spare_names = [s.spare_part_name.strip() for s in saved_spares if s.spare_part_name and s.spare_part_name.strip()]
+    if new_spare_names:
+        existing_spare_names = set()
+        for n in new_spare_names:
+            if SparePart.objects.filter(name__iexact=n).exists():
+                existing_spare_names.add(n)
+        new_spare_parts = [SparePart(name=n) for n in new_spare_names if n not in existing_spare_names]
+        SparePart.objects.bulk_create(new_spare_parts, ignore_conflicts=True)
+
+    # The template submits shop.pk as the option value, so this is a direct
+    # ID-based lookup — no case-folding or name-parsing needed.
+    all_spares = list(jobcard.spares.filter(source=JobCardSpareItem.SOURCE_SHOP))
+
+    # Active shops, plus any archived one these rows already use.
+    shops_by_pk = _resolvable_shops(all_spares)
+
+    shops_to_update = set()
+    for spare in all_spares:
+        # The formset does not touch the `shop` FK (it only carries `shop_name`),
+        # so this still holds the shop the row was billed to BEFORE this edit.
+        # It must be refreshed too: updating only the new shop left the old one
+        # still counting a row it no longer owns, showing one Rs1,000 purchase
+        # as Rs1,000 owed to each of two shops, permanently. This path uses
+        # .update(), so the same guard in JobCardSpareItem.save() never runs here.
+        if spare.shop_id:
+            shops_to_update.add(spare.shop_id)
+        # The formset save just put the posted PK into spare.shop_name.
+        raw_pk = spare.shop_name.strip() if spare.shop_name else ''
+        shop_obj = None
+        if raw_pk:
+            try:
+                shop_obj = shops_by_pk.get(int(raw_pk))
+            except (ValueError, TypeError):
+                shop_obj = None
+        # Set both the FK and the human-readable display name
+        shop_name_val = shop_obj.name if shop_obj else ''
+        JobCardSpareItem.objects.filter(pk=spare.pk).update(
+            shop=shop_obj,
+            shop_name=shop_name_val,
+        )
+        if shop_obj:
+            shops_to_update.add(shop_obj.pk)
+
+    _consume_imported_unassigned(request, shops_to_update)
+
+    for shop in SpareShop.objects.filter(pk__in=shops_to_update):
+        shop.update_totals()
+
+    jobcard.update_totals()
+
+
 @staff_required
 def jobcard_create(request):
     """
@@ -568,73 +659,9 @@ def jobcard_create(request):
                     inventory_formset.save()
                     labour_formset.save()
                     
-                    # AUD-0052: Auto-learn — use case-insensitive lookup to prevent
-                    # ghost duplicates like 'Brake Pad' vs 'brake pad'.
-                    new_concern_texts = [c.concern_text.strip() for c in saved_concerns if c.concern_text and c.concern_text.strip()]
-                    if new_concern_texts:
-                        existing_concern_texts = set()
-                        for t in new_concern_texts:
-                            if ConcernSolution.objects.filter(concern__iexact=t).exists():
-                                existing_concern_texts.add(t)
-                        new_concerns = [ConcernSolution(concern=t) for t in new_concern_texts if t not in existing_concern_texts]
-                        ConcernSolution.objects.bulk_create(new_concerns, ignore_conflicts=True)
-                    
-                    new_spare_names = [s.spare_part_name.strip() for s in saved_spares if s.spare_part_name and s.spare_part_name.strip()]
-                    if new_spare_names:
-                        existing_spare_names = set()
-                        for n in new_spare_names:
-                            if SparePart.objects.filter(name__iexact=n).exists():
-                                existing_spare_names.add(n)
-                        new_spare_parts = [SparePart(name=n) for n in new_spare_names if n not in existing_spare_names]
-                        SparePart.objects.bulk_create(new_spare_parts, ignore_conflicts=True)
-
-                    # AUD-0023: Resolve spare → shop FK using the posted PK, not free-text name.
-                    # The template submits shop.pk as the option value, so we can do a direct
-                    # ID-based lookup — no case-folding or name-parsing needed.
-                    all_spares = list(jobcard.spares.filter(source=JobCardSpareItem.SOURCE_SHOP))
-
-                    # Active shops, plus any archived one these rows already use.
-                    shops_by_pk = _resolvable_shops(all_spares)
-
-                    shops_to_update = set()
-                    for spare in all_spares:
-                        # The formset does not touch the `shop` FK (it only carries `shop_name`),
-                        # so this still holds the shop the row was billed to BEFORE this edit.
-                        # It must be refreshed too: updating only the new shop left the old one
-                        # still counting a row it no longer owns, showing one Rs1,000 purchase
-                        # as Rs1,000 owed to each of two shops, permanently. This path uses
-                        # .update(), so the same guard in JobCardSpareItem.save() never runs here.
-                        if spare.shop_id:
-                            shops_to_update.add(spare.shop_id)
-                        # spare_formset.save() just saved the posted PK into spare.shop_name
-                        raw_pk = spare.shop_name.strip() if spare.shop_name else ''
-                        shop_obj = None
-                        if raw_pk:
-                            try:
-                                shop_obj = shops_by_pk.get(int(raw_pk))
-                            except (ValueError, TypeError):
-                                shop_obj = None
-                        # Set both the FK and the human-readable display name
-                        shop_name_val = shop_obj.name if shop_obj else ''
-                        JobCardSpareItem.objects.filter(pk=spare.pk).update(
-                            shop=shop_obj,
-                            shop_name=shop_name_val,
-                        )
-                        if shop_obj:
-                            shops_to_update.add(shop_obj.pk)
-
-                    # Imported Hub rows are deleted so a part is never owed twice —
-                    # Office and Owner only (AUD-0109).
-                    _consume_imported_unassigned(request, shops_to_update)
-
-                    # Update totals for every affected shop, old and new alike.
-                    for shop in SpareShop.objects.filter(pk__in=shops_to_update):
-                        shop.update_totals()
-
-                    # See jobcard_edit: the labour charge lives on the card, so
-                    # nothing recomputes the bill for a card created with labour
-                    # and no parts. No-ops when the total already agrees.
-                    jobcard.update_totals()
+                    # Auto-learn, the shop ledgers, the Hub import and the
+                    # bill total — the one block every card save ends with.
+                    _after_parts_saved(request, jobcard, saved_concerns, saved_spares)
 
                 messages.success(request, f'Job card for {jobcard.registration_number} created successfully!')
                 return redirect('jobcard_edit', pk=jobcard.pk)
@@ -698,6 +725,9 @@ def jobcard_list(request):
             jobcard_list_query = jobcard_list_query.filter(
                 Q(registration_number__icontains=word) |
                 Q(bill_number__icontains=word) |
+                # The earlier bill's number finds its warranty cards too, so
+                # typing JB-26-007 lists the bill and every claim against it.
+                Q(warranty_for__icontains=word) |
                 Q(brand_name__icontains=word) |
                 Q(model_name__icontains=word) |
                 Q(chassis_code__icontains=word) |
@@ -775,6 +805,13 @@ def jobcard_detail(request, pk):
     for draw in draws:
         _describe_spare(draw, is_draw=True, card_year=year)
 
+    # A WARRANTY CARD charges nothing, so no part prints a customer price —
+    # every one is ₹0 by the server's rule, and a column of "₹0" reads as parts
+    # nobody priced. A shop part keeps its COST line: a warranty's cost is real.
+    if jobcard.is_warranty:
+        for spare in all_spares:
+            spare.price_str = None
+
     # The three section subtotals, summed here off the SAME lists the page
     # prints — never re-queried. `update_totals()` is
     # `Σ spares.total_price + labour_amount` over BOTH routes, so these three
@@ -805,6 +842,10 @@ def jobcard_detail(request, pk):
         'span': _time_in_workshop(jobcard),
         'draws_total': _sum(draws) or None,
         'spares_total': _sum(shop_spares) or None,
+        # The two ends of a warranty link, both by lookup: the bill a warranty
+        # card is FOR, and the warranty cards opened against this bill.
+        'warranty_bill': warranty.find(jobcard.warranty_for) if jobcard.is_warranty else None,
+        'warranty_claims': warranty.claims_for([jobcard.bill_number]).get(jobcard.bill_number, []),
     })
 
 
@@ -860,8 +901,14 @@ def _lifecycle(jobcard):
         jobcard.completed_date if jobcard.completed else None,
         paid_on if settled else None,
     )
-    return [{'label': label, 'date': when}
-            for label, when in zip(LIFECYCLE, dates)]
+    stages = [{'label': label, 'date': when}
+              for label, when in zip(LIFECYCLE, dates)]
+    # A WARRANTY CARD IS NEVER SETTLED — the customer pays nothing — so a
+    # "Settled —" column would wait for ever for a date that cannot come.
+    # Dropped, not dashed: the dash means "not yet", and here it means "never".
+    if jobcard.is_warranty:
+        stages = stages[:2]
+    return stages
 
 
 def _time_in_workshop(jobcard):
@@ -944,10 +991,9 @@ def _describe_spare(spare, is_draw, card_year=None):
         # The pair is ONE item, with an em dash for the half not in yet: a spare
         # is finished when it has been ordered AND received, so half-filled is
         # still incomplete. Same rule the job card's date chip follows.
-        if spare.ordered_date or spare.received_date:
-            ordered = _short_date(spare.ordered_date, card_year)
-            received = _short_date(spare.received_date, card_year)
-            meta.append(f'{ordered} – {received}')
+        pair = date_pair(spare.ordered_date, spare.received_date, card_year)
+        if pair:
+            meta.append(pair)
 
         if spare.shop_id and spare.shop:
             meta.append(spare.shop.name)
@@ -973,34 +1019,6 @@ def _describe_spare(spare, is_draw, card_year=None):
     spare.price_str = rupees(spare.total_price)
 
 
-def _short_date(value, card_year):
-    """
-    A part's date, with the YEAR dropped when it is the card's own.
-
-    Not a formatting preference — a width fix with a measurement behind it. The
-    full pair plus a shop name ("16/07/2026 – 17/07/2026 · Spare club") is 38
-    characters and wrapped to two lines on a 375px phone, so rows in the same
-    list came out different heights and the list read as broken. Dropping a
-    year that is already stated twice in the card above takes it to 30 and it
-    fits.
-
-    The year is KEPT the moment it differs, because then it is the whole point:
-    a part ordered in December for a car admitted in January is the one case
-    where the reader must not have to assume. Both halves are compared
-    separately, so a pair that straddles New Year prints one short and one long
-    rather than hiding the crossing.
-
-    An em dash for the half not in yet: a spare is finished when it has been
-    ordered AND received, so half-filled is still incomplete — the rule the job
-    card's own date chip follows.
-    """
-    if value is None:
-        return '—'
-    if card_year is not None and value.year == card_year:
-        return value.strftime('%d/%m')
-    return value.strftime('%d/%m/%Y')
-
-
 @staff_required
 def jobcard_edit(request, pk):
     """
@@ -1008,6 +1026,19 @@ def jobcard_edit(request, pk):
     Stays on same page after save with success message.
     """
     jobcard = get_object_or_404(JobCard, pk=pk)
+
+    # A WARRANTY CARD HAS ITS OWN PAGE (2026-10-05) — the warranty card, which
+    # carries only what a claim needs. Every screen that opens a card links
+    # here (the board, the Live Report, the lists, the Warranty page), so this
+    # one redirect sends all of them to it. Nothing is saved on a POST: the job
+    # card's form would not even carry a warranty card's fields. The Live
+    # Report's `next=mini` is carried across by name, never by echoing the
+    # query string.
+    if jobcard.is_warranty:
+        target = reverse('warranty_card', args=[jobcard.pk])
+        if request.GET.get('next') == 'mini':
+            target += '?next=mini'
+        return redirect(target)
 
     if request.method == 'POST':
         # Financial Lock: the client disables the form for PAID/BULK_PAID
@@ -1087,75 +1118,12 @@ def jobcard_edit(request, pk):
                 inventory_formset.save()
                 labour_formset.save()
                 
-                # AUD-0052: Auto-learn — case-insensitive duplicate check.
-                new_concern_texts = [c.concern_text.strip() for c in saved_concerns if c.concern_text and c.concern_text.strip()]
-                if new_concern_texts:
-                    existing_concern_texts = set()
-                    for t in new_concern_texts:
-                        if ConcernSolution.objects.filter(concern__iexact=t).exists():
-                            existing_concern_texts.add(t)
-                    new_concerns = [ConcernSolution(concern=t) for t in new_concern_texts if t not in existing_concern_texts]
-                    ConcernSolution.objects.bulk_create(new_concerns, ignore_conflicts=True)
-                
-                new_spare_names = [s.spare_part_name.strip() for s in saved_spares if s.spare_part_name and s.spare_part_name.strip()]
-                if new_spare_names:
-                    existing_spare_names = set()
-                    for n in new_spare_names:
-                        if SparePart.objects.filter(name__iexact=n).exists():
-                            existing_spare_names.add(n)
-                    new_spare_parts = [SparePart(name=n) for n in new_spare_names if n not in existing_spare_names]
-                    SparePart.objects.bulk_create(new_spare_parts, ignore_conflicts=True)
-
-                # AUD-0023: Resolve spare → shop FK using the posted PK, not free-text name.
-                all_spares = list(jobcard.spares.filter(source=JobCardSpareItem.SOURCE_SHOP))
-
-                # Active shops, plus any archived one these rows already use.
-                shops_by_pk = _resolvable_shops(all_spares)
-
-                shops_to_update = set()
-                for spare in all_spares:
-                    # The formset does not touch the `shop` FK (it only carries `shop_name`),
-                    # so this still holds the shop the row was billed to BEFORE this edit.
-                    # It must be refreshed too: updating only the new shop left the old one
-                    # still counting a row it no longer owns, showing one Rs1,000 purchase
-                    # as Rs1,000 owed to each of two shops, permanently. This path uses
-                    # .update(), so the same guard in JobCardSpareItem.save() never runs here.
-                    if spare.shop_id:
-                        shops_to_update.add(spare.shop_id)
-                    # spare_formset.save() just saved the posted PK into spare.shop_name
-                    raw_pk = spare.shop_name.strip() if spare.shop_name else ''
-                    shop_obj = None
-                    if raw_pk:
-                        try:
-                            shop_obj = shops_by_pk.get(int(raw_pk))
-                        except (ValueError, TypeError):
-                            shop_obj = None
-                    # Set both the FK and the human-readable display name
-                    shop_name_val = shop_obj.name if shop_obj else ''
-                    JobCardSpareItem.objects.filter(pk=spare.pk).update(
-                        shop=shop_obj,
-                        shop_name=shop_name_val,
-                    )
-                    if shop_obj:
-                        shops_to_update.add(shop_obj.pk)
-
-                # Imported Hub rows are deleted so a part is never owed twice —
-                # Office and Owner only (AUD-0109).
-                _consume_imported_unassigned(request, shops_to_update)
-
-                # Update totals for every affected shop, old and new alike.
-                for shop in SpareShop.objects.filter(pk__in=shops_to_update):
-                    shop.update_totals()
-
-                # Recompute the bill explicitly.
-                #
-                # A spare save still triggers JobCard.update_totals() through the
-                # model, but the labour charge no longer does — it is a field on
-                # the card now, written by form.save(), and a card whose ONLY
-                # change was its labour figure would otherwise keep the old
-                # total_bill_amount forever. update_totals() no-ops when nothing
-                # moved, so calling it here costs one aggregate and closes that.
-                jobcard.update_totals()
+                # Auto-learn, the shop ledgers, the Hub import and the bill
+                # total — the one block every card save ends with. The bill is
+                # recomputed explicitly there: the labour charge is a field on
+                # the card, written by form.save(), and a card whose ONLY change
+                # was its labour figure would otherwise keep its old total.
+                _after_parts_saved(request, jobcard, saved_concerns, saved_spares)
 
                 # Re-read before deciding whether a settled bill still adds up.
                 jobcard.refresh_from_db()

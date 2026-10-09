@@ -4,6 +4,10 @@ A workshop management system for a single premium automotive workshop. Job cards
 inventory, spare and supplier shops, fleet billing, estimates, invoicing, a cashbook,
 payroll, evidence photos and owner analytics, in one Django application.
 
+> **Final version, frozen 2026-10-09.** It never went live. The workshop's system is
+> being rebuilt in a separate repository, and this one stays as its reference
+> specification — every rule, edge case and reason, with the tests that hold them.
+
 > **[SYSTEM_MAP_DARK.pdf](SYSTEM_MAP_DARK.pdf)** — the whole system on one page: every
 > section as a card, every flow as a line.
 >
@@ -236,13 +240,14 @@ WorkshopOS/
 ## Tests
 
 ```bash
-python manage.py test workshop inventory
+python manage.py test workshop inventory --parallel 4
 ```
 
 3,185 tests covering the financial rules, access control, stock signals, the printed
-documents, and the supplier, fleet and salary flows. The suite runs on SQLite, so it
-never touches a live database. A full run takes anything from 20 minutes to well over an
-hour; the most recent one took 82.
+documents, and the supplier, fleet, salary and warranty flows. The suite runs on SQLite,
+so it never touches a live database. On four workers the most recent full run took 49.6
+minutes; run serially it has taken anything from 20 minutes to 2½ hours. Parallel runs
+need `pip install tblib` (test-only, not in `requirements.txt`).
 
 JavaScript tests run separately, on Node's built-in runner:
 

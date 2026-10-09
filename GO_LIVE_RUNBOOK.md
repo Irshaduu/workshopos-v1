@@ -46,8 +46,9 @@ Do these whenever. None need the owners or DNS access.
 ### 1.1 Rehearse a database restore ☐
 
 **Do this first, and do not skip it.** A backup nobody has restored is not a
-backup — it is a file you hope about. `TECH_DEBT.md` AUD-0063 has flagged this
-as untested since the original audit.
+backup — it is a file you hope about. The original audit logged the restore as
+untested (AUD-0063); that entry left `TECH_DEBT.md` because this step now
+carries it.
 
 ```bash
 python manage.py backup_db
@@ -365,10 +366,11 @@ python manage.py purge_business_data
 python manage.py purge_business_data --yes
 ```
 
-This clears every business table — job cards, both kinds of shop, the fleet
-accounts, inventory, the cashbook, the staff roster, **the owner withdrawals
-and the rent ledger**, **the old bills**, and Deletion and Edit History. It does not touch logins, groups
-or the master lists.
+This clears every business table — job cards (warranty cards included), both
+kinds of shop with their payments and discounts, the fleet accounts, inventory
+(opening stock included), the cashbook, the staff roster, **the owner
+withdrawals and the rent ledger**, **the old bills**, and Change History. It
+does not touch logins, groups or the master lists.
 
 ⚠ **Those last two were missing from the command until 2026-09-04**, and both
 are real money: `OwnerWithdrawal` feeds Cash Tracking, and the rent rate feeds
@@ -564,8 +566,10 @@ customer from January already holds on paper.
 2. ☐ Railway → Variables → set `LAST_EXCEL_BILL_NUMBER=JB-26-245` (that exact
    shape). Railway redeploys on its own.
 3. ☐ Open **Old Bills** in the app. It must read *"The last Excel bill is
-   JB-26-245 — the system's own numbers start after it."* An owner who sees an
-   amber "not set yet" warning there instead has not got the variable in.
+   JB-26-245 — the system's own numbers start after it."* ⚠ **If that line is
+   missing, the variable is not in** — nothing else on the page warns about it
+   (the amber banner that used to was removed on 2026-09-17). This step is the
+   only check.
 4. ☐ Create the first live job card and confirm its number is **JB-26-246**.
 
 ⚠ A value that is set but not in the `JB-YY-NNN` shape **stops the app from
@@ -595,6 +599,15 @@ For each owner, on their own phone:
 
 - ☐ Create a job card, add a spare and a labour line, check the total
 - ☐ Print an invoice — confirm it fits one A4 sheet
+- ☐ **Save that invoice as a PDF on an owner's iPhone**, on the live HTTPS site:
+      press Print, then in Save to Files **paste** into the name box — it must be
+      the car, plate and bill number. This is the one part of the print-name copy
+      never checked on a real iPhone. On a Windows laptop, choose **Save as PDF**,
+      not *Microsoft Print to PDF* — that one always opens with a blank name
+- ☐ Open a **warranty claim** for one part of a finished bill and mark the
+      warranty card completed with its Shop Price still blank: the Live Report's
+      *Warranty not filled* box must list it. Type a Shop Price, and the Profit
+      page must show "Includes warranty claims" under Total Expenses
 - ☐ Take a payment, confirm it appears in Paid Bills
 - ☐ Once that card is completed, start a new card with the same plate: the make, model
       and colour must fill in by themselves, and the customer only be offered — greyed

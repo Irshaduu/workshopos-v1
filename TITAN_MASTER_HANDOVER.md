@@ -1,8 +1,14 @@
 # TITAN MASTER HANDOVER — WorkshopOS
 
-> **Status:** pre-go-live · security hardened · in active development
-> **Version:** 10 · every count in this file re-derived from the working tree on
-> 2026-09-15
+> **Status:** final · frozen 2026-10-09 · never went live
+> **Version:** 11 · every count in this file re-derived from the working tree on
+> 2026-10-09
+
+⚠ **This repository is finished.** The system did not go live. The workshop's
+system is being rebuilt as **v2** in a separate repository, and this one is its
+reference specification — the rules, the edge cases and the reason behind each.
+Nothing new is built here. The roadmap below records where this version
+stopped; what is still open carries over to v2's own plan.
 
 This is the **mission, status and roadmap** doc. The single authoritative "what's
 next" list lives here; other docs link to it rather than keeping their own copy.
@@ -339,13 +345,14 @@ copy — is in `CLAUDE.md` § Commands, which is the one place they are document
 - **Both environments run PostgreSQL** — development on a local instance, production
   on Railway's own Postgres in the same project as the app. SQLite is used only for bulk seeding
   (`USE_SQLITE=true`) and automatically for `manage.py test`.
-- **Modular views**: the `workshop` app's views live in a `views/` package of **21
+- **Modular views**: the `workshop` app's views live in a `views/` package of **24
   focused modules**, with full backward compatibility via re-exports in `__init__.py`.
-  **Fifteen** further modules hold **no views at all** and exist so that one rule has
-  exactly one implementation — `analysis_engine`, `invoice`, `settlement`,
-  `master_data`, `money`, `money_dates`, `spare_dates`, `return_to`, `delete_window`,
-  `rent`, `photos`, `mileage`, `service_history`, `vehicle_ids`, `known_car`. See `CLAUDE.md` §
-  Architecture.
+  **Twenty-one** further modules hold **no views at all** and exist so that one rule
+  has exactly one implementation — `analysis_engine`, `invoice`, `settlement`,
+  `master_data`, `money`, `money_dates`, `spare_dates`, `return_to`, `client_ip`,
+  `delete_window`, `discounts`, `rent`, `photos`, `mileage`, `service_history`,
+  `vehicle_ids`, `known_car`, `pricing`, `old_bills`, `old_bill_pdf`, `warranty`.
+  See `CLAUDE.md` § Architecture.
 - **One declaration per shared control**: `static/css/style.css` is the CSS side of
   that same rule, linked by `base.html` on every page — the "Record a Payment" card
   (`.rpay-*`), the back control (`.pg-back`), the question card (`.wcf-*`) and the
@@ -387,7 +394,14 @@ copy — is in `CLAUDE.md` § Commands, which is the one place they are document
 | 17 | **Money-change rules, and Edit History** | Delivered 2026-09-22 and 2026-09-23, in two passes on the owners' own rules. **Pass 1:** Office dates money at most three days back and changes or deletes it only within 24 hours of keying it; owners are unlimited and every act is announced — the bell for anything Office may do, the other owner's phone for anything only an owner can. **Pass 2:** an edit is now KEPT, not only announced. `EditLog` — the **Edited** tab of Deletion History, one menu entry — records who changed which record and each money figure before → after, on all five edit doors. A notification is a feed swept 14 days after it is read, so until this nothing said what a figure used to be. No retention limit on either history: a row is a few hundred bytes, disputes surface months later, and GST expects years. ⚠ **Pass 2 sat agreed and unbuilt for a day with no row here** — noticed only because the owner asked. **Pass 3 (2026-09-24):** a **Back-dated** tab — money typed in on a later day than it moved, from seven tables, read off the two dates every row already keeps, so no new table; the three payment ledgers gained `recorded_by` so it can say who. And the **Cashbook went quiet inside Office's 24 hours**: its same-day edit or delete is the day's work (cash handed out, settled hours later), so it is neither kept nor announced; past the window, and any back-dating, still are. Rent was left for its own refactor (Pass 5). **Pass 4 (2026-09-24):** the page became **Change History** — one menu entry, three tabs, one row shape and one month at a time on all three, with nothing said twice on a row. A Legacy-Data-style hub was considered and not done: these are three views flipped between while reading, not three jobs done once. **Pass 5 (2026-09-24): Deposit & Rent refactored.** A deposit can now be **edited** (reversing "deliberately no edit") and follows the Cashbook's rule: an edit or delete inside Office's 24 hours is neither kept nor announced; past them — or a date moved past the three-day limit — only an owner can, and it is kept in Change History and reaches the other owner's phone. The page was rebuilt as four blocks, phone first: measured on a 375px phone, "₹1,300 paid ahead" was said twice and the deposit list started 594px down. The Record form stays the shared payment row that scrolls sideways — a two-line version was built and reverted the same day, the owners choosing one shape across all four payment cards. The row marks and the "Recently added" view went — Change History's Back-dated tab is the one place that trace lives. |
 | 18 | **Warranty** | Delivered 2026-10-08, built 2026-10-02 → 10-08 on the owners' design. A customer comes back with a part that failed: a **warranty claim** opens a **warranty card** — a `JobCard` with `kind=WARRANTY` (`0088`), its own `WR-YY-NNN` series, ₹0 to the customer and never settled, held in `save()` on every save, so no screen can put money on one. **One claim is one part** (the owners, 2026-10-07): the car's warranty page lists every finished bill newest first — job cards, earlier warranty cards and Excel bills — and each part carries its own Claim button. The claimed part is copied linked to the exact part it replaces (`replaces` / `replaces_line`, `0089`), which is how a part reads "Being claimed" or "Replaced" and why a second failure is claimed on the replacement ("2nd claim"). **There is no claim for the work alone** — nothing ordered, nothing waits (the owners, 2026-10-08). **The warranty clock runs from the first bill and a claim never restarts it**, so a repeat claim's age and km count from where the part was first fitted. **The system never decides whether a part is covered**: it shows the age to the day and each part's shop, dates and shop price, and the owner decides. **The Shop Price is the shop's answer** — blank waiting, 0 free, an amount paid — so the Warranty page's "Waiting for shop price" and the Profit page need no new column. Cost is real money out and reaches the Profit page through the parts; the customer's side is in no bill list or average (`bill_cards()`). The paper is a **warranty slip** with no prices. Every rule is `workshop/warranty.py` |
 
-### Open
+| 19 | **Shop discounts, and a Supplies Shop bill with no discount of its own** | Delivered 2026-09-29 → 30, the owners' call. A Supplies Shop bill's discount used to be shared into every line's cost, so Cost / Unit matched no paper bill, the suggested price dropped with it, and a late discount re-priced parts already fitted. The bill discount is gone; an item costs exactly its line. A discount a shop gives — on either kind of shop — is now **its own record, a payment with no cash** (`SpareShopDiscount`, `inventory.SupplierDiscount`): it settles the debt exactly as a payment does, is profit on its own date, and never reaches stock cost or Cash Tracking. Recorded from one small tag symbol on each shop page. A Fleet Account takes no discount — built and removed the same day. |
+| 20 | **Parts transport** | Delivered 2026-10-01. A Transport box on each spare row for what bringing the part in cost, paid to anyone but the shop (`0087`). Never the shop's debt and never a line on the customer's bill — it is recovered inside the part's own price: the suggested price is the markup on the part plus transport at cost, and the badge measures the part's own markup. It reaches the Profit page as its own stream, and Cash Tracking on the part's Received date. The same day, moving a part between a car and Unassigned Spares became Office and Owner only (AUD-0109): a Floor import used to erase the shop's debt. |
+| 18b | **Warranty, finished** | Delivered 2026-10-09. The warranty card is laid out as the job card, so staff learn nothing new; the slip closes on WARRANTY alone. What claims cost is named on the Profit page under Total Expenses (never a second expense line — that would charge every claim twice), Deep Analysis gained a Warranty section (which parts come back, whose parts they were, what claims cost — a rate is never printed without its counts), and the Live Report lists a finished warranty card while any box on it is still empty. A warranty part still on its way stays in "On the way" after the car has gone home. |
+| 21 | **Small things from the owners' last week** | Delivered 2026-10-09. Choosing Ordered on a spare asks "Expected in __ days" in the app's one question card, and the Live Report counts it down (`0090`). The Spare Parts columns were reordered so Status stays on the first screen. A saved PDF's name is letters, digits, spaces and dashes only — brackets made two AI tools refuse the file — and Print says so, before the print box opens, when the name could not be copied. |
+
+### Open when this version was frozen
+
+None of these will be done in this repository. They carry over to v2's plan.
 
 | # | Item | State |
 |---|---|---|
@@ -406,7 +420,7 @@ development:
   Registration, install state and subscriptions are per-origin, so every device must
   re-enable push after the move regardless. Steps: `GO_LIVE_RUNBOOK.md`.
 - **Resend delivery must be confirmed before go-live, not after.** Password reset is
-  the *only* self-service recovery an owner has. `AUD-0090` in `TECH_DEBT.md`.
+  the *only* self-service recovery an owner has. `GO_LIVE_RUNBOOK.md` §3.4.
 - **Mobile type scale** — correct in the browser's device emulator, reported as too
   small on a real phone. This is a **design decision, not a bug**; measurements have
   been taken and the owner is answering it screen by screen.
@@ -446,9 +460,9 @@ development:
   Nothing here is hand-edited — `scratchpad/vendor_assets.py` refetches the lot,
   the same rule `build_app_icons.py` follows.
 
-One product question is still owed to the owner: **master-list rename/merge could be
-replaced with delete-only plus click-through** to the job cards using an entry.
-`AUD-0085` and the note in `TECH_DEBT.md` carry the trade.
+The last product question owed to the owner — whether master-list rename/merge
+could become delete-only plus click-through (`AUD-0085`) — was answered on
+2026-09-21: **rename/merge stays.**
 
 ---
 
@@ -478,8 +492,8 @@ be built only if the client asks.
 1. **Fix the code, not the tests.** If a test fails, the logic is likely wrong. Never
    bypass a security test.
 2. **Every new rule gets a test.** One honest exception: the Django suite executes no
-   JavaScript. `node --test "workshop/tests/js/*.test.js"` covers one deliberately DOM-free
-   module; everything else in the frontend must be verified by hand in the browser on
+   JavaScript. `node --test "workshop/tests/js/*.test.js"` covers three deliberately DOM-free
+   modules; everything else in the frontend must be verified by hand in the browser on
    the page it touches. Treat that as a reason to keep JS changes small — **not** as a
    reason to add a build toolchain.
 3. **Industrial-grade aesthetics.** No placeholders, no generic colours. The UI must

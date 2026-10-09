@@ -872,7 +872,7 @@ Stock Effect:       Increases stock             N/A (tracked separately)
 Bill Structure:     Restock Bills + Line Items  Per-job spare items
 Payment System:     Running balance; delete     Cascade waterfall; delete
                     reverses + logs             reverses + logs
-Access:             Office+ (all 23 views)      Office+ (a money delete older than
+Access:             Office+ (all 24 views)      Office+ (a money delete older than
                                                 24 hours is an owner's)
 ```
 

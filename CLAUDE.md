@@ -25,9 +25,13 @@ Postgres removed the ~3.5 s of per-page network latency those docs warned about
 and made `DB_SSLMODE=disable` correct locally. **If a doc mentions Neon, it is
 stale — check `.env`.**
 
-**Still pre-go-live.** Neither instance holds a real workshop's books, so don't
-describe either as live production data. Deployment: `GO_LIVE_RUNBOOK.md`
-(one-time procedure) and `RAILWAY_OPERATIONS.md` (ongoing platform reference).
+**Final — frozen on 2026-10-09, and never went live.** Neither instance holds a
+real workshop's books, so don't describe either as live production data. The
+system is being rebuilt as **v2** in a separate repository; this one is its
+reference specification. Read it to learn a rule, an edge case or the reason
+for one — **do not build here.** Deployment, as it was planned for this version:
+`GO_LIVE_RUNBOOK.md` (one-time procedure) and `RAILWAY_OPERATIONS.md` (ongoing
+platform reference).
 
 ## How to work here
 
@@ -8207,7 +8211,7 @@ no address bar and no browser Back button. A phone still has a system back
 gesture; **a laptop has nothing at all**, and Office reads this app on a laptop.
 
 **It is `.pg-back`, declared ONCE in `static/css/style.css`** — the file
-`base.html` links on every page, which is what lets one declaration reach 23
+`base.html` links on every page, which is what lets one declaration reach 33
 templates. It sits in its own row **above the page header**, left-aligned, and
 it **names its destination** ("Spare Shops", "Control Hub", or the shop's own
 name).
@@ -10696,7 +10700,8 @@ pinned to the LEFT on a phone.** `.modal-dialog` is `margin: var(--bs-modal-marg
 — 0.5rem, all four sides — at every width, and gains `margin-left/right: auto`
 inside `@media (min-width: 576px)` **alone**. Below that a dialog is only
 *visually* centred because `width: auto` makes it fill the row; the moment it
-carries its own `max-width` — which **18 of this app's 37** do, most as an
+carries its own `max-width` — which **22 of this app's 38** do (re-counted
+2026-10-09), most as an
 inline `style="max-width:340px"` — the left margin stays 8px and every remaining
 pixel piles up on the right.
 
@@ -10731,8 +10736,8 @@ container resolves to 0 anyway.
 
 ⚠ **AND THAT LAST SENTENCE IS WHY THE WIDTH IS THERE — THE FIRST VERSION
 SHIPPED WITHOUT IT AND TOOK THE SIDE GAP OFF NINETEEN DIALOGS.** An auto margin
-resolving to 0 is harmless on a box that was already full width, and **19 of the
-37 declare no `max-width` at all** — `modal-sm` included, because Bootstrap's
+resolving to 0 is harmless on a box that was already full width, and **16 of the
+38 declare no `max-width` at all** (19 of 37 when this shipped) — `modal-sm` included, because Bootstrap's
 300px cap on it lives inside `min-width: 576px`. Below the breakpoint those ARE
 that box, so `margin-left/right: auto` replaced Bootstrap's own 8px with
 nothing and every one of them went **edge to edge**: measured on the rent card's
@@ -10985,8 +10990,8 @@ reason it is being shown.
 and there is no build step.** Every outside review reaches the same suggestion, so the
 reasoning is recorded here rather than re-argued.
 
-Roughly 297 KB of inline JS across 45 templates, and ~756 KB of inline CSS across 71
-of the 125 (most templates carry their own `<style>`; measured 2026-09-21). Ten JS files exist —
+Roughly 318 KB of inline JS across 52 templates, and ~787 KB of inline CSS across 74
+of the 137 (most templates carry their own `<style>`; measured 2026-10-09). Ten JS files exist —
 `script.js`, `estimate.js`, `notifications.js`, `sound.js`, `photos.js`,
 `photos-core.js`, `pricing-core.js`, `old-bill-core.js`, `spare_autofill.js`, `confirm.js` — and the rule for what goes in one
 is **used on more than one page**; what stays inline is genuinely page-specific. The
@@ -11008,7 +11013,7 @@ The usual arguments do not apply here:
   Moving the JS out is what would unlock `script-src`, the half that blocks injected
   scripts — real protection, and still the trade this section declines pre-ship,
   because nothing here could prove the move broke nothing.
-- The largest page — the job card form — carries ~63 KB of inline script and ~66 KB of
+- The largest page — the job card form — carries ~69 KB of inline script and ~65 KB of
   inline CSS, read by four devices on one shop's LAN, so caching is a rounding error.
   It is re-sent on every navigation anyway, because `no-store` makes a signed-in page
   uncacheable; that is what `GZipMiddleware` is for, not a bundler.
@@ -11625,9 +11630,10 @@ python -c "import django,os,sys; os.environ.setdefault('DJANGO_SETTINGS_MODULE',
 
 Grepping `def test_` **cannot see tests inherited from shared base classes**.
 
-**Expect anything from 20 minutes to well over an hour** — the slowest measured run took
-82 minutes (2026-09-15). The spread is load-dependent rather than meaningful — a run at
-40 minutes has not hung.
+**A serial run takes anything from 20 minutes to 2 h 30 m** — the slowest, on 2026-09-20,
+shared the machine with a development server and a browser. `--parallel 4` brings it under
+an hour (49.6 minutes on 2026-10-09); see the Commands block for what it needs. The spread
+is load-dependent rather than meaningful — a run at 40 minutes has not hung.
 
 **Running two suites at once is safe.** SQLite's test database is in-memory by default
 (no `TEST['NAME']` is set), so concurrent `manage.py test` processes cannot collide —
@@ -11695,6 +11701,8 @@ elsewhere.**
 | **`GO_LIVE_RUNBOOK.md`** | the **one-time** go-live procedure, rollback, and lockout recovery |
 | **`RAILWAY_OPERATIONS.md`** | the **ongoing** platform reference — env vars, deploys, backups, cost, troubleshooting |
 | **`master_data_export.md`** | the workshop's own brand/model/spare list, as a source record |
+| **`TITAN_SPEC_SHEET.md`** | the whole repository measured on one date — files, lines, languages, layers, tests, structure — and the method that produced each figure |
+| **`WorkshopOS_Complete_Structure.md`** | every screen as an outline, in the drawer's own groups |
 | **`SYSTEM_MAP.html`** / **`_DARK.html`** | the whole system on one page, as a drawing — every section as a card, every flow as a line |
 
 **Both files are GENERATED — edit `scratchpad/build_system_map.py`, never the

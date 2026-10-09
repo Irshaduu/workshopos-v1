@@ -730,8 +730,10 @@ There is a brief switchover. At this traffic level nobody will see it.
 $env:DJANGO_ENV = "development"        # PowerShell
 python manage.py runserver
 
-# Full test suite (SQLite, 20 min to well over an hour — load-dependent; last run 82 min)
-python manage.py test workshop inventory
+# Full test suite (always SQLite). Serial runs measured 20 min to 2 h 30 m, load-dependent.
+# --parallel 4 is the fast way: last run 2026-10-09, 3,185 tests in 49.6 min.
+# It needs `pip install tblib` (test-only) and about 2 GB free memory — CLAUDE.md § Commands.
+python manage.py test workshop inventory --parallel 4
 
 # Ship an update
 python manage.py test workshop inventory

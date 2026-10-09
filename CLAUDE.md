@@ -11129,9 +11129,18 @@ python manage.py runserver
 #   • A GREEN PARALLEL RUN IS TRUSTWORTHY; A RED ONE NEEDS A SECOND LOOK.
 #     Isolation problems cause spurious FAILURES, not spurious passes — so
 #     re-run only the failing files SERIALLY before calling one a bug.
+#   • ⚠ `tblib` MUST BE IN THE VENV (`pip install tblib` — test-only, never in
+#     requirements.txt). Without it a worker cannot send a traceback back, so
+#     ONE failing test ends the whole run with "cannot pickle 'traceback'
+#     object" (2026-10-09: 2,555 of 3,185 ran, 630 never did). With it the
+#     failure is listed at the end and the run carries on.
 #   • ⚠ Do not pipe it through `tail`: that buffers the whole run, so there is
 #     no progress to watch until it exits.
-# Last full run 2026-10-08: 3,111 tests, 2,552s (42.5 min) on `--parallel 4`
+# Last full run 2026-10-09: 3,185 tests, 2,978s (49.6 min) on `--parallel 4`
+# with 2.2 GB free, ALL GREEN, verifying the Warranty cost, Deep Analysis
+# section and Live Report tracking. The run before it stopped at 2,555 on one
+# failure (a test reading a script comment, from bd2f560) — see tblib above.
+# Before it: 2026-10-08: 3,111 tests, 2,552s (42.5 min) on `--parallel 4`
 # with 1.8 GB free, ALL GREEN, verifying the Warranty section.
 # Before it: 2026-09-30, 2,936 tests, 3,264s (54.4 min) on `--parallel 4`
 # with 2.3 GB free, ALL GREEN, verifying the shop discounts on the About

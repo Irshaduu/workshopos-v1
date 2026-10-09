@@ -9,6 +9,7 @@ Two defects found by audit on 2026-07-31 and fixed here:
   * an unassigned spare could never be deleted, so a mistyped ledger entry
     inflated what the workshop owed that shop for ever
 """
+import re
 from datetime import date, timedelta
 from decimal import Decimal as D
 
@@ -134,10 +135,13 @@ class ArchivedShopKeepsItsDebtTests(SpareFlowBase):
 
         self.assertIn(self.shop.pk, [s.pk for s in resp.context['spare_shops']])
         html = resp.content.decode()
-        i = html.find('shop-name-select')
-        chunk = html[i:i + 600]
-        self.assertIn(f'value="{self.shop.pk}"', chunk)
-        self.assertIn('selected', chunk)
+        # The <select> itself: the class name is also in the date chip's
+        # inline script, which comes earlier on the page.
+        select = re.search(r'<select[^>]*shop-name-select[^>]*>(.*?)</select>',
+                           html, re.S)
+        self.assertIsNotNone(select)
+        self.assertRegex(select.group(1),
+                         rf'<option[^>]*value="{self.shop.pk}"[^>]*selected')
 
     def test_an_archived_shop_is_not_offered_to_a_card_that_never_used_it(self):
         """Archiving still hides a shop from new work."""

@@ -749,6 +749,24 @@ class TheNewClaimTests(WarrantyBase):
         self.item.refresh_from_db()
         self.assertEqual(self.item.current_stock, before - 1)
 
+    def test_a_claimed_stock_part_is_drawn_as_the_job_cards_inventory_row(self):
+        """The job card's Inventory Items row: the product fixed in a disabled
+        box, the quantity, and its cost for Office — no customer price."""
+        self.claim(part=f'c{self.stock_part.pk}')
+        wr = JobCard.objects.get(kind=JobCard.KIND_WARRANTY)
+        url = reverse('warranty_card', args=[wr.pk])
+        html = self.client_for(self.office).get(url).content.decode()
+        row = html.split('<tbody id="inventory-list">', 1)[1].split('</tbody>', 1)[0]
+        self.assertIn('class="inventory-row border-bottom', row)
+        self.assertIn('value="Amaron 65Ah" disabled', row)
+        self.assertIn('name="inventory-0-quantity"', row)
+        self.assertIn('>Cost / Unit (₹)</th>', html)
+        for gone in ('Unit Price (₹)', 'Total Price (₹)', 'inventory-0-item"', '-total_price"'):
+            self.assertNotIn(gone, html, gone)
+        floor = self.client_for(self.floor).get(url).content.decode()
+        self.assertIn('value="Amaron 65Ah" disabled', floor)
+        self.assertNotIn('Cost / Unit', floor.split('<tbody id="inventory-list">', 1)[0].rsplit('<table', 1)[1])
+
     def test_an_excel_bills_line_lands_with_no_shop(self):
         old = OldBill.objects.create(
             bill_number='JB-25-010', bill_date=date(2025, 5, 20),
@@ -918,7 +936,11 @@ class SavingAWarrantyCardTests(WarrantyBase):
 
     def test_the_name_is_the_bills_and_the_shop_starts_as_the_bills(self):
         html = self.client_for(self.office).get(self.url).content.decode()
-        self.assertNotIn('name="spares-0-spare_part_name"', html)
+        # The job card's Part Name box, shown with the bill's name — DISABLED,
+        # so it reads as fixed and a post of it is ignored (below).
+        box = html.split('name="spares-0-spare_part_name"', 1)[1].split('>', 1)[0]
+        self.assertIn('disabled', box)
+        self.assertIn('value="Starter Motor"', box)
         self.assertIn(f'<option value="{self.shop.pk}" selected>', html)
         self.post(**{'spares-0-spare_part_name': 'Something else'})
         self.part.refresh_from_db()
@@ -962,7 +984,10 @@ class SavingAWarrantyCardTests(WarrantyBase):
         html = self.client_for(self.office).get(self.url).content.decode()
         for heading in ('Part Name', 'Qty', 'Status', 'Shop', 'Dates', 'Shop Price (₹)', 'Transport (₹)'):
             self.assertIn(f'>{heading}</th>', html, heading)
-        self.assertNotIn('Customer Price', html)
+        # The column, not the words: the job card's stylesheet, inherited, names
+        # Customer Price in its own comments.
+        self.assertNotIn('Customer Price (₹)</th>', html)
+        self.assertNotIn('-total_price"', html)
         self.assertIn('<tbody id="spare-list">', html)
         self.assertIn('class="jc-date-chip"', html)
         self.assertIn('name="spares-0-status"', html)
@@ -1088,10 +1113,29 @@ class TheWarrantyCardPageTests(WarrantyBase):
             self.assertNotIn(f'name="{name}"', html, name)
         self.assertNotIn('-total_price"', html)
         self.assertNotIn('-customer_rate"', html)
-        for heading in ('Today', 'Complaint', 'Claimed part', 'Work done'):
+        for heading in ('Vehicle Details', 'Customer Concerns', 'Job Performed', 'Claimed Part'):
             self.assertIn(heading, html)
         for gone in ('Parts claimed', 'Stock used'):
             self.assertNotIn(gone, html)
+
+    def test_it_is_the_job_cards_page_in_the_job_cards_order(self):
+        """
+        The owners' call (2026-10-09): staff already know the job card, so the
+        warranty card is the job card's page — its stylesheet inherited, never
+        copied, and its sections in the job card's order, with the claimed part
+        where Spare Parts sits. Only the section headings differ (teal).
+        """
+        res = self.client_for(self.office).get(self.url)
+        self.assertTemplateUsed(res, 'workshop/jobcard/jobcard_form.html')
+        html = res.content.decode()
+        names = ['>Vehicle Details</h6>', '>Workshop Note', '>Customer Concerns</h6>',
+                 '>Job Performed</h6>', '>Claimed Part</h6>']
+        at = [html.find(name) for name in names]
+        self.assertNotIn(-1, at, names)
+        self.assertEqual(at, sorted(at), names)
+        self.assertEqual(html.count('class="card-header jc-sec-head'), 5)
+        self.assertIn('.wc-page .jc-sec-head { background: var(--wr-tint);', html)
+        self.assertIn('<span class="jc-submit-label">Update Warranty Card</span>', html)
 
     def test_the_shops_answer_reads_back(self):
         box = self.page(self.office).split('name="spares-0-unit_price"', 1)[1].split('>', 1)[0]
@@ -1339,7 +1383,7 @@ class TheWarrantySlipTests(WarrantyBase):
     """
     The paper handed over with a warranty card's car. Its own sheet in the
     invoice's style: titled WARRANTY, naming the bill it is for, closing on
-    "WARRANTY · NO CHARGE" — and carrying no price of any kind.
+    "WARRANTY" alone — and carrying no price of any kind.
     """
 
     def setUp(self):
@@ -1368,7 +1412,8 @@ class TheWarrantySlipTests(WarrantyBase):
         when = self.sold_card.admitted_date
         self.assertIn(f'FOR:&nbsp; {self.sold_card.bill_number} · '
                       f'{when.day}-{when:%b-%Y}', sheet)
-        self.assertIn('WARRANTY · NO CHARGE', sheet)
+        self.assertIn('<td colspan="3" class="grand-label c">WARRANTY</td>', sheet)
+        self.assertNotIn('NO CHARGE', sheet)                 # the owners' call, 2026-10-09
         self.assertIn('Starter motor replaced', sheet)
         self.assertIn('<td colspan="3">Starter Motor</td>', sheet)
         self.assertIn('<td class="c">1</td>', sheet)      # a blank qty prints as one

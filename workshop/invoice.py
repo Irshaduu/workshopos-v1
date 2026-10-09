@@ -411,7 +411,7 @@ def build_warranty_slip(jobcard, for_number='', for_date=None):
 
     A third document, not a ₹0 invoice. A bill that totals ₹0 reads as a bill
     somebody forgot to price, and the customer is the one who reads it; this
-    says what it is in its title and closes on "WARRANTY · NO CHARGE".
+    says what it is in its title and closes on "WARRANTY".
 
     NO PRICES ANYWHERE, not even ₹0. The warranty card's customer side is ₹0
     by the server's rule, and its cost side (what the shop charged) is the

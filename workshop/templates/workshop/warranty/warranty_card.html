@@ -1,42 +1,49 @@
-{% extends 'workshop/base.html' %}
+{% extends 'workshop/jobcard/jobcard_form.html' %}
 {% load custom_filters %}
 
 {% block title %}{{ card.bill_number }}{% endblock %}
 
-{% block content %}
 {% comment %}
 ==========================================================================
-THE WARRANTY CARD — the page a claim is worked on (2026-10-05)
+THE WARRANTY CARD — the page a claim is worked on, BUILT AS THE JOB CARD
 ==========================================================================
-A warranty card is a job card underneath (`kind=WARRANTY`), but this page
-carries only what a claim needs, top to bottom:
+A warranty card is a job card underneath (`kind=WARRANTY`), and since
+2026-10-09 its page IS the job card's page, on the owners' call: staff already
+have the job card in their hands, so the same sections, the same boxes, the
+same type, placeholders and sizes, in the same order — and only the section
+headings in the warranty's teal, so the two are told apart at a glance.
 
-  * the header — WR number, the car, the bill it is FOR and how old that bill
-    is, the Slip (Office and Owner) and a ⋮;
-  * Today — this visit's date, mileage and mechanic (and the make and model,
-    only while the earlier bill left them blank);
-  * Complaint — what the customer reported, each marked fixed as work goes on;
-  * Claimed part — ONE CLAIM IS ONE PART (2026-10-07): the part from the
-    earlier bill, as the JOB CARD'S OWN SPARE ROW (2026-10-08) — Part Name ·
-    Qty · Status · Shop · Dates · Shop Price · Transport, no customer price —
-    inside the warranty card's colour. The Shop Price is the shop's answer
-    (blank waiting, 0 free, an amount paid). Nothing is added or removed here — a wrong claim is cancelled from
-    the ⋮, and anything not from the earlier bill goes on a job card and is
-    billed. The rare replacement taken from Unassigned Spares is filled into
-    this one row from a quiet link under it;
-  * Work done, then photos and a note.
+ONE STYLESHEET, NOT A COPY. This template EXTENDS `jobcard/jobcard_form.html`
+and overrides only the title and the content, so the job card's whole
+`extra_css` block (and its date chip) is inherited as it stands. A second copy
+of those rules would drift from the first the day either is touched — the
+`.rpay-*` rule. ⚠ Anything added to the job card's `extra_css` reaches this
+page too; that is the point.
+
+Top to bottom:
+
+  * the header — WR number, the car, the part and which claim, the bill it is
+    FOR and how old the warranty is, the Slip (Office and Owner) and a ⋮;
+  * Vehicle Details — this visit's date, mileage and mechanic (and the make
+    and model, only while the earlier bill left them blank);
+  * Workshop Note & Photos — the job card's fold, as Floor's job card draws it
+    (there is no customer here to name);
+  * Customer Concerns and Job Performed — the job card's own rows;
+  * Claimed Part — ONE CLAIM IS ONE PART: the part from the earlier bill as the
+    job card's spare row (or its inventory row), with no customer price. The
+    Shop Price is the shop's answer (blank waiting, 0 free, an amount paid).
+    Nothing is added or removed here — a wrong claim is cancelled from the ⋮,
+    and anything not from the earlier bill goes on a job card and is billed.
 
 No customer box, no customer price, no labour charge — the customer pays
 nothing, and `JobCard.save()` holds that whatever is posted. Every link that
 opens a warranty card lands here through `jobcard_edit`'s redirect.
-
-The Complaint and Work done rows are the job card's own machinery (script.js:
-`addFormRow` and the suggestions), so those two lists keep the job card's ids.
 ==========================================================================
 {% endcomment %}
-<style>
-    .wc-page { max-width: 760px; }
 
+{% block content %}
+<style>
+    /* The header — the warranty card's own, unchanged. */
     .wc-head {
         background: var(--wr-tint);
         border: 1px solid var(--wr-line);
@@ -81,90 +88,29 @@ The Complaint and Work done rows are the job card's own machinery (script.js:
     .wc-menu .dropdown-item { min-height: 44px; display: flex; align-items: center; white-space: normal; }
     .wc-cancel-off { flex-wrap: wrap; }
     .wc-cancel-off small { flex-basis: 100%; padding-left: 1.5rem; font-size: .74rem; color: var(--color-text-muted); }
-    .wc-km { margin-top: 3px; font-size: .74rem; font-weight: 600; color: var(--wr-ink-deep); }
     @media (hover: none) {
         .wc-btn, .wc-dots { height: 44px; }
         .wc-dots { width: 44px; }
     }
 
-    .wc-errors {
-        border: 1px solid #fecaca; background: #fef2f2; color: #991b1b;
-        border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; font-size: .85rem;
-    }
-    .wc-errors-title { font-weight: 800; margin-bottom: 4px; }
-    .wc-errors ul { margin: 0; padding-left: 18px; }
+    /* THE ONLY DIFFERENCE FROM THE JOB CARD: the section headings wear the
+       warranty's teal (`--wr-*`, style.css), so a warranty card is told from a
+       job card at a glance while every box under them is the job card's.
+       Two classes, so they outrank the job card's one-class band rules. */
+    .wc-page .jc-sec-head { background: var(--wr-tint); border-bottom-color: var(--wr-line); }
+    .wc-page .jc-sec-icon { background: #ccfbf1; border-color: var(--wr-line); color: var(--wr-ink); }
+    .wc-page .jc-sec-name { color: var(--wr-ink-deep); }
+    .wc-page .jc-fold[open] > summary .jc-fold-chevron { color: var(--wr-ink-deep); }
 
-    .wc-sec {
-        background: #fff; border: 1px solid var(--color-border);
-        border-radius: 14px; padding: 12px 14px; margin-bottom: 12px;
-    }
-    .wc-sec-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
-    .wc-h {
-        display: flex; align-items: center; gap: 7px; margin: 0;
-        font-size: .76rem; font-weight: 800; letter-spacing: .05em;
-        text-transform: uppercase; color: var(--color-text-muted);
-    }
-    .wc-h i { color: var(--wr-ink); font-size: .95rem; }
-    .wc-sec > .wc-h { margin-bottom: 8px; }
-    .wc-add {
-        display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
-        height: 34px; padding: 0 12px; border-radius: 999px;
-        border: 1px solid var(--wr-line); background: var(--wr-tint);
-        color: var(--wr-ink); font-weight: 700; font-size: .8rem;
-    }
-    @media (hover: none) { .wc-add { height: 44px; } }
+    /* The job card scopes its label weight to `#jobcardForm`. */
+    #wcForm .form-label { font-weight: 600; }
 
-    .wc-grid { display: grid; gap: 10px; }
-    .wc-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .wc-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 10px; }
-    @media (max-width: 575.98px) {
-        .wc-grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        .wc-grid-3 > :last-child { grid-column: 1 / -1; }
-    }
-    .wc-field { min-width: 0; }
-    .wc-field > label { display: block; font-size: .72rem; font-weight: 600; color: var(--color-text-muted); margin-bottom: 3px; }
-
-    .wc-list { display: flex; flex-direction: column; gap: 8px; }
-    .wc-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
-    .wc-row-main { flex: 1 1 200px; min-width: 0; }
-    .wc-row-side { flex: 0 0 130px; }
-
-    /* THE CLAIMED PART — the job card's spare table, inside the warranty
-       card's own frame (the teal edge and heading). The boxes inside are the
-       job card's widgets, so they look and behave as they do there. */
-    .wc-sec-claim { border-color: var(--wr-line); }
-    .wc-sec-claim .wc-h { color: var(--wr-ink-deep); }
-    .wc-claim-table { margin: 0 -4px; }
-    .wc-claim-table thead th {
-        font-size: .68rem; font-weight: 700; letter-spacing: .04em;
-        color: var(--color-text-muted); white-space: nowrap; padding: 6px 8px;
-    }
-    .wc-claim-table td { padding: 8px; vertical-align: middle; }
-    .wc-claim-table .col-part { min-width: 150px; }
-    .wc-claim-table .col-qty { min-width: 70px; width: 70px; }
-    .wc-claim-table .col-qty input { text-align: center; }
-    .wc-claim-table .col-status { min-width: 112px; }
-    .wc-claim-table .col-shop { min-width: 150px; }
-    .wc-claim-table .col-dates { min-width: 132px; }
-    .wc-claim-table .col-price { min-width: 104px; }
-    .wc-claim-table .jc-row-invalid > td { background: #fef2f2; }
-    .wc-part-name { font-weight: 700; overflow-wrap: anywhere; }
-    .wc-part-note { font-size: .74rem; color: var(--color-text-muted); }
+    /* Small lines under the claimed part's name — the warranty's own facts. */
+    .wc-km { margin-top: 3px; font-size: .74rem; font-weight: 600; color: var(--wr-ink-deep); }
+    .wc-part-note { margin-top: 3px; font-size: .74rem; color: var(--color-text-muted); }
     .wc-part-note[hidden] { display: none; }
-    .wc-part {
-        border: 1px solid var(--color-border); border-radius: 12px; padding: 10px;
-    }
-    .wc-part-top { display: flex; gap: 10px; align-items: center; }
-    .wc-part-top .wc-part-name { flex: 1 1 auto; min-width: 0; }
-    .wc-part-sub { display: block; font-size: .76rem; font-weight: 600; color: var(--color-text-muted); }
-    .wc-part-qty {
-        flex: 0 0 auto; display: flex; align-items: center; gap: 6px; margin: 0;
-        font-size: .76rem; font-weight: 600; color: var(--color-text-muted);
-    }
-    .wc-part-qty input { width: 64px; text-align: center; }
-    .wc-photos { margin-bottom: 10px; }
     .wc-hub-link {
-        display: inline-flex; align-items: center; gap: 6px; margin-top: 8px;
+        display: inline-flex; align-items: center; gap: 6px; margin: 4px 1.15rem 12px;
         padding: 4px 0; border: 0; background: none;
         font-size: .78rem; font-weight: 600; color: var(--color-text-muted);
     }
@@ -176,17 +122,6 @@ The Complaint and Work done rows are the job card's own machinery (script.js:
     .wc-hub-row:last-child { border-bottom: 0; }
     .wc-hub-what { flex: 1 1 auto; min-width: 0; }
     .wc-hub-what small { display: block; color: var(--color-text-muted); }
-
-    .wc-err { width: 100%; color: #b91c1c; font-size: .75rem; margin-top: 3px; }
-    .wc-bad { border-color: #fca5a5; background: #fef2f2; }
-    .wc-row.wc-bad { border: 1px solid #fca5a5; border-radius: 10px; padding: 6px; }
-
-    .wc-save {
-        width: 100%; height: 52px; margin: 4px 0 40px; border: 0; border-radius: 14px;
-        background: var(--wr-ink); color: #fff; font-weight: 800; font-size: 1.05rem;
-    }
-    .wc-save:active { transform: scale(.99); }
-    @media (hover: hover) { .wc-save:hover { background: var(--wr-ink-deep); } }
 </style>
 
 <div class="wc-page">
@@ -235,125 +170,257 @@ The Complaint and Work done rows are the job card's own machinery (script.js:
           data-confirm-no="Keep it">{% csrf_token %}</form>
     {% endif %}
 
-    {% if problems %}
-    <div class="wc-errors" id="wcErrors" tabindex="-1">
-        <div class="wc-errors-title">Not saved — {{ problems|length }} thing{{ problems|length|pluralize }} to fix</div>
-        <ul>{% for where, what in problems %}<li><b>{{ where }}</b> — {{ what }}</li>{% endfor %}</ul>
-    </div>
-    {% endif %}
-
     <form method="post" id="wcForm" autocomplete="off"{% if next_url %} action="?next={{ next_url }}"{% endif %}>
         {% csrf_token %}
 
-        <section class="wc-sec" aria-labelledby="wcToday">
-            <h2 class="wc-h" id="wcToday"><i class="bi bi-calendar-check" aria-hidden="true"></i>Today</h2>
-            {% if ask_car %}
-            {% comment %} Only for a car whose earlier bill carried no make or model — see `WarrantyCardForm`. {% endcomment %}
-            <div class="wc-grid wc-grid-2">
-                {% if form.brand_name %}<div class="wc-field"><label for="{{ form.brand_name.id_for_label }}">Make</label>{{ form.brand_name }}<div class="list-group autocomplete-suggestions"></div>{% if form.brand_name.errors %}<div class="wc-err">{{ form.brand_name.errors.0 }}</div>{% endif %}</div>{% endif %}
-                {% if form.model_name %}<div class="wc-field"><label for="{{ form.model_name.id_for_label }}">Model</label>{{ form.model_name }}<div class="list-group autocomplete-suggestions"></div>{% if form.model_name.errors %}<div class="wc-err">{{ form.model_name.errors.0 }}</div>{% endif %}</div>{% endif %}
+        {% if problems %}
+        <div class="jc-errors" id="wcErrors" tabindex="-1">
+            <div class="jc-errors-title">
+                Not saved — {{ problems|length }} thing{{ problems|length|pluralize }} to fix
             </div>
-            {% endif %}
-            <div class="wc-grid wc-grid-3">
-                <div class="wc-field"><label for="{{ form.admitted_date.id_for_label }}">Date</label>{{ form.admitted_date }}{% if form.admitted_date.errors %}<div class="wc-err">{{ form.admitted_date.errors.0 }}</div>{% endif %}</div>
-                <div class="wc-field"><label for="{{ form.mileage.id_for_label }}">Mileage</label>{{ form.mileage }}{% if form.mileage.errors %}<div class="wc-err">{{ form.mileage.errors.0 }}</div>{% elif km_since is not None %}<div class="wc-km">{{ km_since|inr }} km since {{ first.number }}</div>{% endif %}</div>
-                <div class="wc-field"><label for="{{ form.lead_mechanic.id_for_label }}">Mechanic</label>{{ form.lead_mechanic }}{% if form.lead_mechanic.errors %}<div class="wc-err">{{ form.lead_mechanic.errors.0 }}</div>{% endif %}</div>
-            </div>
-        </section>
-
-        <section class="wc-sec" aria-labelledby="wcComplaint">
-            <div class="wc-sec-head">
-                <h2 class="wc-h" id="wcComplaint"><i class="bi bi-chat-left-text" aria-hidden="true"></i>Complaint</h2>
-                <button type="button" class="wc-add" id="add-concern-btn" aria-label="Add a complaint"><i class="bi bi-plus-lg" aria-hidden="true"></i><span>Add</span></button>
-            </div>
-            {{ concern_formset.management_form }}
-            <div id="concern-list" class="wc-list">
-                {% for c in concern_formset %}
-                <div class="wc-row{% if c.errors %} wc-bad{% endif %}">
-                    {{ c.id }}<div class="d-none">{{ c.DELETE }}</div>
-                    <div class="wc-row-main">{{ c.concern_text }}<div class="list-group autocomplete-suggestions"></div></div>
-                    <div class="wc-row-side">{{ c.status }}</div>
-                    {% if c.errors %}<div class="wc-err">{% for field in c %}{% for error in field.errors %}{{ error }} {% endfor %}{% endfor %}</div>{% endif %}
-                </div>
+            <ul>
+                {% for where, what in problems %}
+                <li><span class="jc-err-where">{{ where }}</span> — {{ what }}</li>
                 {% endfor %}
-            </div>
-        </section>
+            </ul>
+        </div>
+        {% endif %}
 
-        <section class="wc-sec wc-sec-claim" aria-labelledby="wcParts" data-job-part="{% if claimed.source == 'INVENTORY' and claimed.item %}{{ claimed.item.category.name }}{% else %}{{ claimed.spare_part_name }}{% endif %}">
-            <h2 class="wc-h" id="wcParts"><i class="bi bi-gear-wide-connected" aria-hidden="true"></i>Claimed part</h2>
-            {{ part_formset.management_form }}{{ stock_formset.management_form }}
-            {% if part_formset.forms %}
-            <div class="table-responsive wc-claim-table">
-                <table class="table table-borderless align-middle mb-0">
-                    <thead><tr class="border-bottom">
-                        <th class="col-part">Part Name</th>
-                        <th class="col-qty text-center">Qty</th>
-                        <th class="col-status">Status</th>
-                        {% if photos_configured %}<th class="col-photo text-center" scope="col" aria-label="Photos" title="Photos"><i class="bi bi-camera"></i></th>{% endif %}
-                        {% if is_office %}<th class="col-shop">Shop</th>{% endif %}
-                        <th class="col-dates">Dates</th>
-                        {% if is_office %}<th class="col-price">Shop Price (₹)</th><th class="col-price">Transport (₹)</th>{% endif %}
-                    </tr></thead>
-                    <tbody id="spare-list">
-                        {% for p in part_formset %}{% include "workshop/warranty/_warranty_part_row.html" with p=p %}{% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% if unassigned_spares %}<button type="button" class="wc-hub-link" data-bs-toggle="modal" data-bs-target="#wcHubModal"><i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>Took the replacement from Unassigned Spares?</button>{% endif %}
-            {% else %}
-            <div class="wc-list">{% for s in stock_formset %}{% include "workshop/warranty/_warranty_stock_row.html" with s=s %}{% endfor %}</div>
-            {% endif %}
-        </section>
-
-        <section class="wc-sec" aria-labelledby="wcWork">
-            <div class="wc-sec-head">
-                <h2 class="wc-h" id="wcWork"><i class="bi bi-tools" aria-hidden="true"></i>Work done</h2>
-                <button type="button" class="wc-add" id="add-labour-btn" aria-label="Add work done"><i class="bi bi-plus-lg" aria-hidden="true"></i><span>Add</span></button>
-            </div>
-            {{ labour_formset.management_form }}
-            <div id="labour-list" class="wc-list">
-                {% for l in labour_formset %}
-                <div class="wc-row{% if l.errors %} wc-bad{% endif %}">
-                    {{ l.id }}<div class="d-none">{{ l.DELETE }}</div>
-                    <div class="wc-row-main">{{ l.job_description }}</div>
-                    {% if l.errors %}<div class="wc-err">{% for field in l %}{% for error in field.errors %}{{ error }} {% endfor %}{% endfor %}</div>{% endif %}
+        {% comment %} VEHICLE DETAILS — what this visit records. The car itself is fixed by the bill being claimed, so only the date, the mileage and the mechanic are boxes here — and the make and model, only while the earlier bill left them blank (`WarrantyCardForm`). {% endcomment %}
+        <div class="card shadow-sm mb-4 border-0">
+            <div class="card-header jc-sec-head">
+                <div class="jc-sec-title">
+                    <span class="jc-sec-icon"><i class="bi bi-car-front-fill"></i></span>
+                    <h6 class="jc-sec-name">Vehicle Details</h6>
                 </div>
-                {% endfor %}
             </div>
-            {% comment %} The job boxes' suggestions — "<part> replaced" for the claimed part (the script below). {% endcomment %}
-            <datalist id="jobLineOptions"></datalist>
-        </section>
+            <div class="card-body">
+                <div class="row g-3">
+                    {% if form.brand_name %}
+                    <div class="col-12 col-sm-4">
+                        <label for="{{ form.brand_name.id_for_label }}" class="form-label small text-muted">Car Brand</label>
+                        {{ form.brand_name }}
+{% if form.brand_name.errors %}<div class="text-danger small mt-1">{{ form.brand_name.errors|join:", " }}</div>{% endif %}
+                        <div class="list-group autocomplete-suggestions"></div>
+                    </div>
+                    {% endif %}
+                    {% if form.model_name %}
+                    <div class="col-12 col-sm-4">
+                        <label for="{{ form.model_name.id_for_label }}" class="form-label small text-muted">Car Model</label>
+                        {{ form.model_name }}
+{% if form.model_name.errors %}<div class="text-danger small mt-1">{{ form.model_name.errors|join:", " }}</div>{% endif %}
+                        <div class="list-group autocomplete-suggestions"></div>
+                    </div>
+                    {% endif %}
+                    {% if ask_car %}<div class="w-100 m-0 p-0"></div>{% endif %}
 
-        <section class="wc-sec" aria-labelledby="wcNote">
-            <h2 class="wc-h" id="wcNote"><i class="bi bi-sticky" aria-hidden="true"></i>{% if photos_configured %}Photos and note{% else %}Note{% endif %}</h2>
-            {% comment %} The car's photo box — the job card's own include, without the "Photos" caption the section heading already says. A warranty card is never settled, so photos can always be added. {% endcomment %}
-            {% if photos_configured and photo_subject_id %}
-            <div class="photo-box-row wc-photos">
-                {% include "workshop/includes/_photo_box.html" %}
-                <p class="photo-box-hint">{% if photo_count %}Tap to view or add.{% else %}Tap to open the camera.{% endif %}</p>
+                    <div class="col-12 col-sm-4">
+                        <label for="{{ form.admitted_date.id_for_label }}" class="form-label small text-muted">Admitted Date</label>
+                        {{ form.admitted_date }}
+{% if form.admitted_date.errors %}<div class="text-danger small mt-1">{{ form.admitted_date.errors|join:", " }}</div>{% endif %}
+                    </div>
+
+                    <div class="col-12 col-sm-4">
+                        <label for="{{ form.mileage.id_for_label }}" class="form-label small text-muted">Mileage (Km)</label>
+                        {{ form.mileage }}
+{% if form.mileage.errors %}<div class="text-danger small mt-1">{{ form.mileage.errors|join:", " }}</div>{% elif km_since is not None %}<div class="wc-km">{{ km_since|inr }} km since {{ first.number }}</div>{% endif %}
+                    </div>
+
+                    <div class="col-12 col-sm-4">
+                        <label for="{{ form.lead_mechanic.id_for_label }}" class="form-label small text-muted"><i class="bi bi-person-badge"></i> Mechanic (Staff)</label>
+                        {{ form.lead_mechanic }}
+{% if form.lead_mechanic.errors %}<div class="text-danger small mt-1">{{ form.lead_mechanic.errors|join:", " }}</div>{% endif %}
+                    </div>
+                </div>
             </div>
-            {% endif %}
-            <label for="{{ form.notes.id_for_label }}" class="visually-hidden">Note</label>
-            {{ form.notes }}
-            {% if form.notes.errors %}<div class="wc-err">{{ form.notes.errors.0 }}</div>{% endif %}
-        </section>
+        </div>
 
-        <button type="submit" class="wc-save"><i class="bi bi-save me-1" aria-hidden="true"></i>Save</button>
+        {% comment %} THE NOTE AND THE PHOTOS — the job card's fold, as Floor's job card draws it: there is no customer on a warranty card, so this is the one note and the car's photos. Closed while there is no note, open when there is (or when the note was refused). A warranty card is never settled, so photos can always be added. {% endcomment %}
+        <details class="card shadow-sm mb-4 border-0 jc-fold"
+                 {% if form.notes.value or form.notes.errors %}open{% endif %}>
+            <summary class="card-header jc-sec-head jc-fold-head">
+                <div class="jc-sec-title">
+                    <span class="jc-sec-icon"><i class="bi bi-sticky-fill"></i></span>
+                    <h6 class="jc-sec-name">Workshop Note{% if photos_configured %} &amp; Photos{% endif %}</h6>
+                </div>
+                <i class="bi bi-chevron-down jc-fold-chevron"></i>
+            </summary>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-12">
+                        <label for="{{ form.notes.id_for_label }}" class="form-label small text-muted">
+                            <i class="bi bi-sticky"></i> Anything worth recording about this car
+                        </label>
+                        {{ form.notes }}
+{% if form.notes.errors %}<div class="text-danger small mt-1">{{ form.notes.errors|join:", " }}</div>{% endif %}
+                    </div>
+
+                    {% include "workshop/includes/_photo_card_row.html" %}
+                </div>
+            </div>
+        </details>
+
+        <div class="card shadow-sm mb-4 border-0">
+            <div class="card-header jc-sec-head">
+                <div class="jc-sec-title">
+                    <span class="jc-sec-icon"><i class="bi bi-chat-left-text-fill"></i></span>
+                    <h6 class="jc-sec-name">Customer Concerns</h6>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-primary jc-add flex-shrink-0" id="add-concern-btn" aria-label="Add Concern">
+                    <i class="bi bi-plus-lg"></i><span class="jc-add-label">Add Concern</span>
+                </button>
+            </div>
+            <div class="card-body p-0">
+                {{ concern_formset.management_form }}
+                <div id="concern-list" class="list-group list-group-flush">
+                    {% for c_form in concern_formset %}
+                    <div class="list-group-item concern-row{% if c_form.errors %} jc-row-invalid{% endif %}">
+                        {{ c_form.id }}
+                        <div class="d-none">{{ c_form.DELETE }}</div>
+                        <div class="d-flex gap-2">
+                            <div class="flex-grow-1">
+                                {{ c_form.concern_text }}
+                                <div class="list-group autocomplete-suggestions"></div>
+                                {% if c_form.errors %}<div class="text-danger" style="font-size: 0.72rem;">{% for field in c_form %}{% for error in field.errors %}{{ error }} {% endfor %}{% endfor %}{% for error in c_form.non_field_errors %}{{ error }} {% endfor %}</div>{% endif %}
+                            </div>
+                            <div style="width: 130px;">
+                                {{ c_form.status }}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-4 border-0">
+            <div class="card-header jc-sec-head">
+                <div class="jc-sec-title">
+                    <span class="jc-sec-icon"><i class="bi bi-tools"></i></span>
+                    <h6 class="jc-sec-name">Job Performed</h6>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-primary jc-add flex-shrink-0" id="add-labour-btn" aria-label="Add Job">
+                    <i class="bi bi-plus-lg"></i><span class="jc-add-label">Add Job</span>
+                </button>
+            </div>
+            <div class="card-body p-0">
+                <div class="swipe-container">
+                    {{ labour_formset.management_form }}
+                    <div id="labour-list">
+                        {% for l_form in labour_formset %}
+                        <div class="swipe-row{% if l_form.errors %} jc-row-invalid{% endif %}">
+                            {{ l_form.id }}
+                            <div class="d-none">{{ l_form.DELETE }}</div>
+                            <div class="swipe-cell col-job">
+                                {{ l_form.job_description }}
+                                {% if l_form.job_description.errors %}<div class="text-danger" style="font-size: 0.72rem;">{{ l_form.job_description.errors.0 }}</div>{% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% comment %} The job boxes' suggestions — "<part> replaced" for the claimed part (the script below). {% endcomment %}
+                    <datalist id="jobLineOptions"></datalist>
+                </div>
+            </div>
+            {% comment %} No Total Labour box: the customer pays nothing for a warranty card. {% endcomment %}
+        </div>
+
+        {% comment %} THE CLAIMED PART — the job card's Spare Parts table (or its Inventory Items table for a part off our own shelf), holding the ONE part this claim is for. No "+ Add" and no delete: the part is opened with the card and goes with it. `data-job-part` names it for the Job Performed suggestion. {% endcomment %}
+        <div class="card shadow-sm mb-4 border-0" data-job-part="{% if claimed.source == 'INVENTORY' and claimed.item %}{{ claimed.item.category.name }}{% else %}{{ claimed.spare_part_name }}{% endif %}">
+            <div class="card-header jc-sec-head">
+                <div class="jc-sec-title">
+                    <span class="jc-sec-icon"><i class="bi bi-gear-wide-connected"></i></span>
+                    <h6 class="jc-sec-name">Claimed Part</h6>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive pb-2">
+                    {{ part_formset.management_form }}{{ stock_formset.management_form }}
+                    {% if part_formset.forms %}
+                    <table class="table table-borderless align-middle mb-0" style="min-height: 80px;">
+                        <thead class="text-muted small text-uppercase">
+                            <tr class="border-bottom">
+                                <th class="col-idx" scope="col" aria-label="Row number">#</th>
+                                <th class="ps-3 col-part" style="min-width: 320px;">Part Name</th>
+                                <th class="text-center col-qty">Qty</th>
+                                <th class="col-status">Status</th>
+                                {% if photos_configured %}
+                                <th class="col-photo text-center" scope="col" aria-label="Photos" title="Photos">
+                                    <i class="bi bi-camera"></i>
+                                </th>
+                                {% endif %}
+                                {% if is_office %}
+                                <th class="col-shop" style="min-width: 220px;">Shop</th>
+                                {% endif %}
+                                <th class="{% if not is_office %}pe-4{% endif %}" style="min-width: 138px;">Dates</th>
+                                {% if is_office %}
+                                <th class="col-price text-nowrap">Shop Price (₹)</th>
+                                <th class="col-price pe-4 text-nowrap">Transport (₹)</th>
+                                {% endif %}
+                            </tr>
+                        </thead>
+                        <tbody id="spare-list">
+                            {% for p in part_formset %}{% include "workshop/warranty/_warranty_part_row.html" with p=p %}{% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <table class="table table-borderless mb-0 inventory-table" style="min-height: 80px;">
+                        <thead class="text-muted small text-uppercase">
+                            <tr class="border-bottom">
+                                <th class="col-idx" scope="col" aria-label="Row number">#</th>
+                                <th class="ps-3" style="min-width: 240px;">Item</th>
+                                <th class="text-center{% if not is_office %} pe-4{% endif %}" style="min-width: 90px;">Qty</th>
+                                {% if is_office %}<th class="text-nowrap text-end pe-4" style="min-width: 110px;">Cost / Unit (₹)</th>{% endif %}
+                            </tr>
+                        </thead>
+                        <tbody id="inventory-list">
+                            {% for s in stock_formset %}{% include "workshop/warranty/_warranty_stock_row.html" with s=s %}{% endfor %}
+                        </tbody>
+                    </table>
+                    {% endif %}
+                </div>
+                {% if unassigned_spares %}<button type="button" class="wc-hub-link" data-bs-toggle="modal" data-bs-target="#wcHubModal"><i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>Took the replacement from Unassigned Spares?</button>{% endif %}
+            </div>
+        </div>
+
+        <div class="d-grid gap-2 mb-5">
+            <button type="submit" class="btn btn-lg py-3 fw-bold jc-submit">
+                <i class="bi bi-save jc-submit-icon me-1"></i>
+                <span class="jc-spin me-1" aria-hidden="true"></span>
+                <span class="jc-submit-label">Update Warranty Card</span>
+            </button>
+        </div>
+
+        {% comment %} The sticky save — the job card's, inside the form, shown only while something is unsaved (`.jc-fab`). {% endcomment %}
+        <button type="submit" class="jc-fab" aria-label="Update warranty card" title="Update warranty card">
+            <i class="bi bi-check-lg"></i>
+        </button>
     </form>
 </div>
 
-{% comment %} The "+ Add" templates for Complaint and Work done — outside the form, so they never post. {% endcomment %}
+{% comment %} The "+ Add" templates for Customer Concerns and Job Performed — the job card's own, outside the form, so they never post. {% endcomment %}
 <div id="empty-concern-form" class="d-none">
-    <div class="wc-row">
-        {{ concern_formset.empty_form.id }}<div class="d-none">{{ concern_formset.empty_form.DELETE }}</div>
-        <div class="wc-row-main">{{ concern_formset.empty_form.concern_text }}<div class="list-group autocomplete-suggestions"></div></div>
-        <div class="wc-row-side">{{ concern_formset.empty_form.status }}</div>
+    <div class="list-group-item concern-row">
+        {{ concern_formset.empty_form.id }}
+        <div class="d-none">{{ concern_formset.empty_form.DELETE }}</div>
+        <div class="d-flex gap-2">
+            <div class="flex-grow-1">
+                {{ concern_formset.empty_form.concern_text }}
+                <div class="list-group autocomplete-suggestions"></div>
+            </div>
+            <div style="width: 130px;">
+                {{ concern_formset.empty_form.status }}
+            </div>
+        </div>
     </div>
 </div>
 <div id="empty-labour-form" class="d-none">
-    <div class="wc-row">
-        {{ labour_formset.empty_form.id }}<div class="d-none">{{ labour_formset.empty_form.DELETE }}</div>
-        <div class="wc-row-main">{{ labour_formset.empty_form.job_description }}</div>
+    <div class="swipe-row">
+        {{ labour_formset.empty_form.id }}
+        <div class="d-none">{{ labour_formset.empty_form.DELETE }}</div>
+        <div class="swipe-cell col-job">
+            {{ labour_formset.empty_form.job_description }}
+        </div>
     </div>
 </div>
 
@@ -395,54 +462,142 @@ own import, read by `_after_parts_saved`. Nothing happens until Save.
 {% include "workshop/includes/_photo_overlays.html" %}
 {% endif %}
 
-{% include "workshop/includes/_date_chip.html" %}
 {% load static %}
 <script src="{% static 'js/spare_autofill.js' %}?v=6"></script>
 
+{% comment %}
+THE JOB CARD'S BEHAVIOUR, for the parts of it this page has: the empty-box
+hairline, the amber "changed" edge and the sticky save while unsaved, the
+growing note, the status colours, the "total" mark on the price boxes, the
+row an "+ Add" brings in, the press sweep and one press, one save. Written
+against this page's own form (`#wcForm`) rather than shared with the job
+card's script, which is tied to its form's id and to sections this page does
+not have. Its rules are the job card's — see the comments there.
+{% endcomment %}
 <script>
 (function () {
     'use strict';
     var form = document.getElementById('wcForm');
     if (!form) return;
 
-    // A blank row is not a row — decided afresh on EVERY submit, never
-    // latched, because a submit can be refused after this runs (the job
-    // card's rule). A row its ✕ removed stays removed.
-    function sweep(rows, isBlank) {
-        document.querySelectorAll(rows).forEach(function (row) {
-            var box = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
-            if (box) box.checked = row.dataset.removed === '1' || isBlank(row);
+    // ---- The empty-box hairline (`.jc-empty`) — opt-out by `jc-optional`. ----
+    function isBox(el) {
+        if (!el || !el.tagName) return false;
+        var tag = el.tagName;
+        if (tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'TEXTAREA') return false;
+        if (tag === 'INPUT') {
+            var t = (el.type || '').toLowerCase();
+            if (t === 'hidden' || t === 'checkbox' || t === 'radio' ||
+                t === 'color' || t === 'button' || t === 'submit') return false;
+        }
+        if (el.classList.contains('jc-optional')) return false;
+        return !el.closest('.d-none');
+    }
+    function refresh(el) {
+        if (!isBox(el)) return;
+        el.classList.toggle('jc-empty', !String(el.value == null ? '' : el.value).trim());
+    }
+    function refreshAll() {
+        form.querySelectorAll('input, select, textarea').forEach(refresh);
+    }
+
+    // ---- "total" on the price boxes of a row of more than one. ----
+    function markTotals(qtyBox) {
+        var row = qtyBox.closest('tr');
+        if (!row) return;
+        var qty = parseFloat(qtyBox.value);
+        var show = isFinite(qty) && qty > 0 && qty !== 1;
+        row.querySelectorAll('.jc-total').forEach(function (mark) { mark.hidden = !show; });
+        row.querySelectorAll('input[name$="-unit_price"], input[name$="-transport_cost"]').forEach(function (box) {
+            box.classList.toggle('jc-has-total', show);
         });
     }
-    function val(row, selector) {
-        var field = row.querySelector(selector);
-        return field ? field.value.trim() : '';
+    function refreshRowTotals() {
+        form.querySelectorAll('input[name^="spares-"][name$="-quantity"]').forEach(markTotals);
     }
-    form.addEventListener('submit', function () {
-        sweep('#concern-list > .wc-row', function (row) { return !val(row, 'input[name$="-concern_text"]'); });
-        sweep('#labour-list > .wc-row', function (row) { return !val(row, 'input[name$="-job_description"]'); });
-        dirty = false;
+
+    // ---- The status colours (style.css), concerns and the part alike. ----
+    function applyStatusColors() {
+        document.querySelectorAll('select[name*="status"]').forEach(function (select) {
+            var val = (select.value || '').toUpperCase();
+            select.classList.remove('status-pending', 'status-working', 'status-ordered', 'status-fixed');
+            if (val === 'PENDING' || val === 'HOLD') select.classList.add('status-pending');
+            else if (val === 'WORKING' || val === 'PROCESSING') select.classList.add('status-working');
+            else if (val === 'ORDERED') select.classList.add('status-ordered');
+            else if (val === 'FIXED' || val === 'RECEIVED') select.classList.add('status-fixed');
+        });
+    }
+    applyStatusColors();
+
+    // ---- The note grows with what is in it (`textarea.jc-grow`). ----
+    function autoGrow(el) {
+        if (!el.offsetParent) return;       // inside a closed fold: nothing to measure
+        el.style.height = 'auto';
+        el.style.height = el.scrollHeight + 'px';
+    }
+    form.querySelectorAll('textarea.jc-grow').forEach(function (el) {
+        el.style.overflowY = 'hidden';
+        el.style.resize = 'none';
+        el.addEventListener('input', function () { autoGrow(el); });
+        autoGrow(el);
+    });
+    form.querySelectorAll('details.jc-fold').forEach(function (fold) {
+        fold.addEventListener('toggle', function () {
+            if (fold.open) fold.querySelectorAll('textarea.jc-grow').forEach(autoGrow);
+        });
     });
 
-    // A row added by "+ Add" is brought into view with its first box ready.
-    // Deferred, so script.js's own click handler has added the row first.
-    ['add-concern-btn', 'add-labour-btn'].forEach(function (id) {
-        var button = document.getElementById(id);
-        if (!button) return;
-        button.addEventListener('click', function () {
+    // ---- Unsaved: the amber edge on what changed, and the sticky save. ----
+    var dirty = false;
+    function markDirty(el) {
+        if (!dirty) {
+            dirty = true;
+            document.body.classList.add('jc-dirty');
+        }
+        if (el && isBox(el)) el.classList.add('jc-changed');
+    }
+    form.addEventListener('input', function (e) {
+        refresh(e.target);
+        markDirty(e.target);
+        if (/^spares-.*-quantity$/.test(e.target.name || '')) markTotals(e.target);
+    });
+    form.addEventListener('change', function (e) {
+        markDirty(e.target);
+        if (e.target.tagName === 'SELECT' && (e.target.name || '').indexOf('status') !== -1) applyStatusColors();
+        refreshAll();
+        refreshRowTotals();
+        if (window.refreshDateChips) window.refreshDateChips();
+    });
+    window.addEventListener('beforeunload', function (e) {
+        if (!dirty) return;
+        e.preventDefault();
+        e.returnValue = '';
+    });
+
+    // ---- "+ Add": the new row wears its hairlines, lights up and is shown. ----
+    [['add-concern-btn', 'concern-list'], ['add-labour-btn', 'labour-list']].forEach(function (pair) {
+        var btn = document.getElementById(pair[0]);
+        var list = document.getElementById(pair[1]);
+        if (!btn || !list) return;
+        btn.addEventListener('click', function () {
             setTimeout(function () {
-                var list = button.closest('.wc-sec').querySelector('.wc-list');
-                var row = list && list.lastElementChild;
+                refreshAll();
+                applyStatusColors();
+                var row = list.lastElementChild;
                 if (!row) return;
-                row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-                var first = row.querySelector('input[type="text"], input:not([type]), select');
-                if (first) first.focus({ preventScroll: true });
+                row.classList.remove('jc-row-new');
+                void row.offsetWidth;
+                row.classList.add('jc-row-new');
+                row.addEventListener('animationend', function () {
+                    row.classList.remove('jc-row-new');
+                }, { once: true });
+                row.scrollIntoView({ block: 'nearest' });
             }, 0);
         });
     });
 
-    // "<part> replaced" for the claimed part, offered in the job boxes. A
-    // stock part by its TYPE ("Oil Filter"), never its brand — the name the
+    // ---- "<part> replaced", offered in the job boxes. ----
+    // A stock part by its TYPE ("Oil Filter"), never its brand — the name the
     // slip prints it under, so the two lines cannot disagree.
     var jobList = document.getElementById('jobLineOptions');
     var jobPart = (form.querySelector('[data-job-part]') || {}).dataset;
@@ -452,20 +607,8 @@ own import, read by `_after_parts_saved`. Nothing happens until Save.
         jobList.appendChild(option);
     }
 
-    // The Status box wears the job card's status colours (style.css).
-    function paintStatus(select) {
-        var value = (select.value || '').toUpperCase();
-        select.classList.remove('status-pending', 'status-ordered', 'status-fixed');
-        select.classList.add(value === 'RECEIVED' ? 'status-fixed'
-                             : value === 'ORDERED' ? 'status-ordered' : 'status-pending');
-    }
-    form.querySelectorAll('#spare-list select[name$="-status"]').forEach(paintStatus);
-    document.addEventListener('change', function (e) {
-        if (e.target.matches && e.target.matches('#spare-list select[name$="-status"]')) paintStatus(e.target);
-    });
-
-    // The rare Hub pick: fill the claimed part from the chosen Hub row, and
-    // say so on the row. Saving is what moves it — `imported_unassigned_ids`.
+    // ---- The rare Hub pick: fill the claimed part from the chosen Hub row. ----
+    // Saving is what moves it — `imported_unassigned_ids`.
     document.addEventListener('click', function (e) {
         var use = e.target.closest && e.target.closest('[data-hub-use]');
         if (!use) return;
@@ -492,20 +635,54 @@ own import, read by `_after_parts_saved`. Nothing happens until Save.
         hidden.value = use.dataset.hubUse;
         var note = row.querySelector('.wc-hub-note');
         if (note) note.hidden = false;
+        markDirty(row.querySelector('input[name$="-unit_price"]'));
+        refreshAll();
         if (window.refreshDateChips) window.refreshDateChips();
-        dirty = true;
         var modal = bootstrap.Modal.getInstance(document.getElementById('wcHubModal'));
         if (modal) modal.hide();
     });
 
-    // Unsaved work is warned about before the page is left.
-    var dirty = false;
-    form.addEventListener('input', function () { dirty = true; });
-    form.addEventListener('change', function () { dirty = true; });
-    window.addEventListener('beforeunload', function (e) {
-        if (!dirty) return;
-        e.preventDefault();
-        e.returnValue = '';
+    // ---- The press sweep on the Add and Save buttons. ----
+    document.addEventListener('pointerdown', function (e) {
+        if (!e.target.closest) return;
+        var btn = e.target.closest('.jc-add, .jc-submit, .jc-fab');
+        if (!btn || btn.disabled) return;
+        btn.classList.remove('jc-sweep');
+        void btn.offsetWidth;
+        btn.classList.add('jc-sweep');
+        btn.addEventListener('animationend', function () {
+            btn.classList.remove('jc-sweep');
+        }, { once: true });
+    });
+
+    // ---- Saving. ----
+    // A blank row is not a row — decided afresh on EVERY submit, never latched,
+    // because a submit can be refused after this runs (the job card's rule).
+    function sweepBlank(rows, field) {
+        form.querySelectorAll(rows).forEach(function (row) {
+            var box = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
+            var text = row.querySelector(field);
+            if (box) box.checked = !(text && text.value.trim());
+        });
+    }
+    form.addEventListener('submit', function (e) {
+        sweepBlank('#concern-list > .concern-row', 'input[name$="-concern_text"]');
+        sweepBlank('#labour-list > .swipe-row', 'input[name$="-job_description"]');
+        if (e.defaultPrevented) return;
+        dirty = false;
+        // One press, one save: the button says it is working, then both doors
+        // stop taking presses — in a setTimeout, or some browsers cancel the post.
+        var btn = form.querySelector('.jc-submit');
+        var fab = form.querySelector('.jc-fab');
+        if (btn) {
+            btn.classList.add('is-working');
+            var label = btn.querySelector('.jc-submit-label');
+            if (label) label.textContent = 'Updating…';
+        }
+        setTimeout(function () {
+            if (btn) btn.disabled = true;
+            if (fab) fab.disabled = true;
+        }, 0);
     });
 
     // A refused save: put the summary in front of the reader.
@@ -516,6 +693,13 @@ own import, read by `_after_parts_saved`. Nothing happens until Save.
             errors.focus({ preventScroll: true });
         });
     }
+
+    // First pass after every other script has run (the date chips' own).
+    document.addEventListener('DOMContentLoaded', function () {
+        refreshAll();
+        refreshRowTotals();
+        if (window.refreshDateChips) window.refreshDateChips();
+    });
 }());
 </script>
 {% endblock %}

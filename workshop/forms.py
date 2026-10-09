@@ -1124,8 +1124,9 @@ class WarrantyCardForm(JobCardForm):
     colour, the chassis code and VIN, the labour charge — is fixed by the bill
     being claimed or is not this card's business, so it is not a field here.
 
-    Built on `JobCardForm`, so the date rule (never in the future) and the
-    mechanic list are the job card's own, not copies.
+    Built on `JobCardForm`, so the date rule (never in the future), the
+    mechanic list, the labels and every widget — the one-row note that grows —
+    are the job card's own, not copies (the page is the job card's, 2026-10-09).
     """
 
     class Meta(JobCardForm.Meta):
@@ -1137,12 +1138,6 @@ class WarrantyCardForm(JobCardForm):
         for name in ('brand_name', 'model_name'):
             if getattr(self.instance, name, None):
                 del self.fields[name]
-        self.fields['admitted_date'].label = 'Date'
-        self.fields['lead_mechanic'].label = 'Mechanic'
-        self.fields['notes'].label = 'Note'
-        # Two rows, not the job card's one: this page has no script growing the
-        # box, and a claim's note is usually a sentence about what the shop said.
-        self.fields['notes'].widget.attrs['rows'] = 2
 
 
 class WarrantyPartForm(ShopSpareRowForm):

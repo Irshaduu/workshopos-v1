@@ -482,10 +482,12 @@ date under every bill's number is that bill's own date, and a warranty card's
 block (tinted) reads "20 Aug 2026 · 2nd claim · for WR-26-001". Every number in a
 claim's chain jumps to that bill's block on the same page.
 
-**The warranty card** carries only what a claim needs: today's date, mileage and
-mechanic; the complaint; the **claimed part** — the job card's own spare row with
-no customer price; the work done; photos and a note. The claimed part comes from
-the earlier bill:
+**The warranty card** is laid out exactly as a job card — same sections, same
+boxes, same order — so nobody has a new screen to learn; only the section
+headings are teal. Vehicle Details (today's date, mileage and mechanic), Workshop
+Note & Photos, Customer Concerns, Job Performed, and last, where Spare Parts sits,
+the **Claimed Part** — the job card's own spare row with no customer price. The
+claimed part comes from the earlier bill:
 
 | the failed part was | the card gets |
 |---|---|
@@ -505,7 +507,7 @@ settled, it cannot go to a Fleet Account, and it is in no bill list (Pending
 Bills, Paid Bills, All Invoices) and no average. What the shop charged, transport
 and stock are real money out and reach the Profit page as any part does; the
 Warranty page totals them. Its paper is the **warranty slip** — what was done and
-fitted, with no prices anywhere, closing on WARRANTY · NO CHARGE.
+fitted, with no prices anywhere, closing on WARRANTY.
 
 **The board and the car.** Warranty cards sit in their own group under the job
 cards, and a **Warranty** chip narrows the board to them. A car can have a job

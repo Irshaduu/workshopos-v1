@@ -1,13 +1,13 @@
 {% comment %}
 THE CLAIMED PART, from a spare shop (or an Excel bill's line) — one claim is
-one part — drawn as the JOB CARD'S OWN SPARE ROW (2026-10-08, the owners'
-call): Part Name · Qty · Status · Shop · Dates · Shop Price · Transport, the
-same boxes, with no customer price. Only the frame around it is the warranty
-card's colour.
+one part — drawn as the JOB CARD'S OWN SPARE ROW, cell for cell (2026-10-09,
+the owners' call): # · Part Name · Qty · Status · Photos · Shop · Dates ·
+Shop Price · Transport, the same boxes and classes, with no customer price.
 
-  * The NAME is the bill's — printed, never a box (a disabled field, so a post
-    cannot change it). When the replacement came from another shop than the
-    first fitting, a quiet line under it says where the part first came from.
+  * The NAME is the bill's — the job card's Part Name box, disabled (the form
+    field is disabled, so a post cannot change it). When the replacement came
+    from another shop than the first fitting, a quiet line under it says where
+    the part first came from.
   * The SHOP starts as the replaced part's own and can be changed — rarely,
     when the replacement was bought elsewhere.
   * The SHOP PRICE is the shop's answer: blank while it has not answered (its
@@ -19,30 +19,40 @@ card's colour.
 Floor sees no shop and no price, as on the job card: both post back from a
 hidden cell, and `_floor_locked_data` pins the prices on the server.
 {% endcomment %}
-<tr class="spare-row{% if p.errors %} jc-row-invalid{% endif %}" data-original-status="{{ p.instance.status }}">
-    <td class="col-part">
+<tr class="spare-row border-bottom{% if p.errors %} jc-row-invalid{% endif %}" data-original-status="{{ p.instance.status }}">
+    <td class="col-idx">1</td>
+    <td class="ps-3 col-part" style="min-width: 320px;">
         {{ p.id }}
-        <div class="wc-part-name">{{ p.instance.spare_part_name }}</div>
+        {{ p.spare_part_name }}
         {% if p.moved_from %}<div class="wc-part-note">First fitted from {{ p.moved_from.name }}</div>{% endif %}
         <div class="wc-part-note wc-hub-note" hidden>From Unassigned Spares — saved with the card</div>
-        {% if p.errors %}<div class="wc-err">{% for field in p %}{% for error in field.errors %}{{ field.label }}: {{ error }} {% endfor %}{% endfor %}{% for error in p.non_field_errors %}{{ error }} {% endfor %}</div>{% endif %}
+        {% if p.errors %}<div class="text-danger" style="font-size: 0.72rem;">{% for field in p %}{% for error in field.errors %}{{ field.label }}: {{ error }} {% endfor %}{% endfor %}{% for error in p.non_field_errors %}{{ error }} {% endfor %}</div>{% endif %}
     </td>
-    <td class="col-qty">{{ p.quantity }}</td>
-    <td class="col-status">{{ p.status }}</td>
+    <td class="col-qty">
+        {{ p.quantity }}
+    </td>
+    <td class="col-status">
+        {{ p.status }}
+    </td>
     {% if photos_configured %}
-    <td class="col-photo text-center">{% if p.instance.pk %}{% include "workshop/includes/_photo_box.html" with photo_subject="spare" photo_subject_id=p.instance.pk photo_count=p.instance.photo_count photo_limit=spare_photo_limit photo_can_edit=photo_can_edit %}{% endif %}</td>
+    <td class="col-photo text-center">
+        {% if p.instance.pk %}{% include "workshop/includes/_photo_box.html" with photo_subject="spare" photo_subject_id=p.instance.pk photo_count=p.instance.photo_count photo_limit=spare_photo_limit photo_can_edit=photo_can_edit %}{% endif %}
+    </td>
     {% endif %}
     {% if is_office %}
-    <td class="col-shop">
-        <select name="{{ p.shop_name.html_name }}" class="form-select form-select-sm shop-name-select" aria-label="Shop">
+    <td class="col-shop" style="min-width: 220px;">
+        <select name="{{ p.shop_name.html_name }}"
+                class="form-select form-select-sm shop-name-select"
+                style="min-width: 200px; width: 100%;" aria-label="Shop">
             <option value="">-- Shop --</option>
             {% for shop in spare_shops %}<option value="{{ shop.pk }}"{% if p.is_bound %}{% if p.shop_name.value|stringformat:"s" == shop.pk|stringformat:"s" %} selected{% endif %}{% elif p.instance.shop_id == shop.pk %} selected{% endif %}>{{ shop.name }}</option>{% endfor %}
         </select>
     </td>
     {% endif %}
-    <td class="col-dates">
+    <td class="{% if not is_office %}pe-4{% endif %}">
         <div class="jc-dates">
-            <button type="button" class="jc-date-chip" aria-haspopup="dialog" aria-expanded="false">
+            <button type="button" class="jc-date-chip"
+                    aria-haspopup="dialog" aria-expanded="false">
                 <i class="bi bi-calendar-range"></i>
                 <span class="jc-date-chip-text"></span>
             </button>
@@ -61,8 +71,18 @@ hidden cell, and `_floor_locked_data` pins the prices on the server.
         </div>
     </td>
     {% if is_office %}
-    <td class="col-price">{{ p.unit_price }}</td>
-    <td class="col-price">{{ p.transport_cost }}</td>
+    <td class="col-price">
+        <div class="jc-total-wrap">
+            {{ p.unit_price }}
+            <span class="jc-total" hidden>total</span>
+        </div>
+    </td>
+    <td class="col-price pe-4">
+        <div class="jc-total-wrap">
+            {{ p.transport_cost }}
+            <span class="jc-total" hidden>total</span>
+        </div>
+    </td>
     {% else %}
     <td class="d-none">
         <select name="{{ p.shop_name.html_name }}" tabindex="-1" aria-hidden="true">

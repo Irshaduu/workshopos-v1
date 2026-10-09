@@ -5922,7 +5922,8 @@ The doors also refuse it out loud: Settle Bill says there is nothing to settle;
 a fleet move is refused **in the view**, which is load-bearing because
 `job_cards.add()` writes with a bulk `.update()` that never runs `save()`; the
 invoice redirects to the **warranty slip** (`build_warranty_slip` — no prices
-anywhere, closing on WARRANTY · NO CHARGE); and `jobcard_edit` redirects to the
+anywhere, closing on WARRANTY alone — it read "WARRANTY · NO CHARGE" until
+2026-10-09, the owners' call); and `jobcard_edit` redirects to the
 warranty card, so every link that opens "a card" lands on the right page.
 
 **`bill_cards()` is `live_cards()` without warranty cards** — the one answer for
@@ -6043,11 +6044,22 @@ Record a Discount for the same amount** on the shop's page: the shelf count
 stays right, the shop is owed nothing, and the discount lands as profit on its
 date against the draw's cost.
 
-**The warranty card's page carries only what a claim needs** — Today (date,
-mileage, mechanic; make and model only while the earlier bill left them blank),
-Complaint, the ONE claimed part drawn as **the Job Card's own spare row** with no
-customer price, Work done, photos and a note. No customer box, no customer price,
-no labour charge. The quantity may go down (one of four injectors failed), never
+⚠ **THE WARRANTY CARD'S PAGE IS THE JOB CARD'S PAGE** (2026-10-09, the owners'
+call: staff already know the job card, so there is nothing new to learn). Its
+sections, boxes, type, placeholders and sizes are the job card's, in the job
+card's order — **Vehicle Details** (date, mileage, mechanic; make and model only
+while the earlier bill left them blank) · **Workshop Note & Photos** (the job
+card's fold, as Floor's job card draws it) · **Customer Concerns** · **Job
+Performed** · **Claimed Part**, where Spare Parts sits: the ONE claimed part as
+the job card's own spare row (or inventory row, for a stock part), with no
+customer price. **Only the section headings differ — teal**, so the two are told
+apart at a glance; the Save is the job card's amber "Update" button with its
+sticky twin. `warranty_card.html` **extends `jobcard/jobcard_form.html`** and
+overrides only the title and content, so the job card's whole stylesheet is
+inherited, never copied — anything added to it reaches this page too. Its
+script is the job card's behaviour written for `#wcForm` (hairline, amber edge,
+growing note, status colours). No customer box, no customer price, no labour
+charge. The quantity may go down (one of four injectors failed), never
 above the bill's (`claim_limit`); the part's name and a stock product are
 disabled fields. Its save is the job card's own: `_floor_locked_data`, and
 `_after_parts_saved`, which was extracted for it so the block that keeps the shop

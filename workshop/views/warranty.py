@@ -242,7 +242,7 @@ def warranty_start(request, registration):
 
 #: The warranty card's four row sections, as the page names them — the refusal
 #: summary uses the same words (`_problems_for`).
-WARRANTY_SECTIONS = ('Complaint', 'Work done', 'Claimed part', 'Claimed part')
+WARRANTY_SECTIONS = ('Customer concern', 'Job', 'Claimed part', 'Claimed part')
 
 
 def _card_way_back(request, office):
@@ -264,9 +264,11 @@ def warranty_card(request, pk):
     """
     THE WARRANTY CARD — the page a claim is worked on (2026-10-05).
 
-    It carries only what a claim needs: this visit's date, mileage and
-    mechanic; the complaint; the ONE part claimed — fixed from the bill, with
-    the SHOP'S ANSWER; the work done; photos and a note. Nothing else is added here: anything not from the
+    It is the JOB CARD'S PAGE (2026-10-09, the owners' call — the template
+    extends `jobcard_form.html`), in the job card's order: this visit's date,
+    mileage and mechanic; the note and photos; the concerns; the jobs; and,
+    where Spare Parts sits, the ONE part claimed — fixed from the bill, with
+    the SHOP'S ANSWER. Nothing else is added here: anything not from the
     earlier bill goes on a job card and is billed. No customer box, no
     customer price, no labour charge — the customer pays nothing — and the car
     and the bill it is for are fixed. Every link that opens a warranty card

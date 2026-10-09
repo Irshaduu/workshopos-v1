@@ -134,13 +134,15 @@ Takes `doc` — what `invoice.build_warranty_slip()` returned — and `jobcard`.
                 </tbody>
                 {% comment %}
                 The closing line, where the bill prints its TOTAL — in the
-                TOTAL's own treatment, across the bill's 42.5% right block so
-                it is one line at 14pt.
+                TOTAL's own treatment, across the bill's 42.5% right block. It
+                reads WARRANTY alone (the owners' call, 2026-10-09): it said
+                "WARRANTY · NO CHARGE", and with no price anywhere on the sheet
+                the word already says the customer pays nothing.
                 {% endcomment %}
                 <tbody class="totals">
                     <tr class="grand">
                         <td class="thanks">Thank you for your business!</td>
-                        <td colspan="3" class="grand-label c">WARRANTY · NO CHARGE</td>
+                        <td colspan="3" class="grand-label c">WARRANTY</td>
                     </tr>
                 </tbody>
             </table>

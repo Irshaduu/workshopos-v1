@@ -670,7 +670,7 @@ A Job Card records parts in **two separate sections**:
 | | **Inventory Items** | **Spare Parts** |
 |---|---|---|
 | Where it came from | the workshop's own shelf | ordered from a spare shop for this job |
-| Columns | Item, Qty, Cost / Unit, Unit Price, Total Price | Part Name, Qty, Status, Ordered, Received, Shop, Shop Price, Transport, Customer Price |
+| Columns | Item, Qty, Cost / Unit, Unit Price, Total Price | Part Name, Qty, Photos, Shop, Status, Dates (Ordered / Received / Expected in, behind one chip), Shop Price, Transport, Customer Price |
 | How the part is chosen | **picked** from stock (search, then select) | typed freely |
 | Moves warehouse stock? | **yes** | never |
 | Who supplied it | a Supplies Shop restock bill, earlier | the spare shop, per this job |
@@ -1372,9 +1372,19 @@ LIVE REPORT — Office / Owner only, WHOLE PAGE
                     live card is already received, so unwindowed this box would
                     be longer than the rest of the page put together.
     ON THE WAY      Amber: parts ordered from a spare shop and still
-                    travelling. Part name, then car · registration · shop.
+                    travelling. Part name, then car · registration · shop —
+                    and on the right, how long since it was ordered over how
+                    long is left ("2d" / "13 left"; "due today" in amber,
+                    "2 late" in red). The second line appears only when
+                    somebody typed the expected days: marking a part Ordered
+                    on the job card asks in the app's question card: the
+                    part, its shop under it (red "No shop" when none; Office
+                    and Owner only), then "Expected in [ ] days" — Done or
+                    Skip; Skip keeps the part Ordered (the date chip shows and
+                    changes it later).
+                    The only parts box with a clock on its rows.
     NOT ORDERED YET Red: parts nobody has ordered yet. Same shape.
-                    All three are square, drawn identically, and their rows sit
+                    All three are square, drawn alike, and their rows sit
                     directly on the box's colour rather than on white cards of
                     their own. They list SHOP purchases only — a warehouse draw
                     came off the shelf already fitted and has no ordering

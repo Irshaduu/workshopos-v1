@@ -37,10 +37,20 @@ never be filed against the next thing somebody deletes.
             <h2 class="wcf-title" id="wcfTitle">Are you sure?</h2>
             <p class="wcf-text" id="wcfText"></p>
 
+            {% comment %}
+            The one text box. Usually the optional delete REASON; with
+            `wsConfirm({input: ...})` it is a short box instead — the job card's
+            "Expected in __ days" — read as one sentence: a word before it, a
+            unit after it and a warning line under it. confirm.js puts every
+            attribute back on each open.
+            {% endcomment %}
             <div class="wcf-reason" id="wcfReasonWrap" hidden>
+                <span class="wcf-unit" id="wcfLead" hidden></span>
                 <input type="text" id="wcfReason" maxlength="255"
                        placeholder="Reason (optional)" aria-label="Reason">
+                <span class="wcf-unit" id="wcfUnit" hidden></span>
             </div>
+            <p class="wcf-warn" id="wcfWarn" hidden aria-live="polite"></p>
 
             {% comment %}
             Cancel is FIRST in the DOM so it is on the left on a laptop, and

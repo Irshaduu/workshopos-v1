@@ -1,7 +1,7 @@
 {% comment %}
 THE CLAIMED PART, from a spare shop (or an Excel bill's line) — one claim is
 one part — drawn as the JOB CARD'S OWN SPARE ROW, cell for cell (2026-10-09,
-the owners' call): # · Part Name · Qty · Status · Photos · Shop · Dates ·
+the owners' call): # · Part Name · Qty · Photos · Shop · Status · Dates ·
 Shop Price · Transport, the same boxes and classes, with no customer price.
 
   * The NAME is the bill's — the job card's Part Name box, disabled (the form
@@ -31,24 +31,24 @@ hidden cell, and `_floor_locked_data` pins the prices on the server.
     <td class="col-qty">
         {{ p.quantity }}
     </td>
-    <td class="col-status">
-        {{ p.status }}
-    </td>
     {% if photos_configured %}
     <td class="col-photo text-center">
         {% if p.instance.pk %}{% include "workshop/includes/_photo_box.html" with photo_subject="spare" photo_subject_id=p.instance.pk photo_count=p.instance.photo_count photo_limit=spare_photo_limit photo_can_edit=photo_can_edit %}{% endif %}
     </td>
     {% endif %}
     {% if is_office %}
-    <td class="col-shop" style="min-width: 220px;">
+    <td class="col-shop" style="min-width: 160px;">
         <select name="{{ p.shop_name.html_name }}"
                 class="form-select form-select-sm shop-name-select"
-                style="min-width: 200px; width: 100%;" aria-label="Shop">
+                style="min-width: 144px; width: 100%;" aria-label="Shop">
             <option value="">-- Shop --</option>
             {% for shop in spare_shops %}<option value="{{ shop.pk }}"{% if p.is_bound %}{% if p.shop_name.value|stringformat:"s" == shop.pk|stringformat:"s" %} selected{% endif %}{% elif p.instance.shop_id == shop.pk %} selected{% endif %}>{{ shop.name }}</option>{% endfor %}
         </select>
     </td>
     {% endif %}
+    <td class="col-status">
+        {{ p.status }}
+    </td>
     <td class="{% if not is_office %}pe-4{% endif %}">
         <div class="jc-dates">
             <button type="button" class="jc-date-chip"
@@ -65,6 +65,7 @@ hidden cell, and `_floor_locked_data` pins the prices on the server.
                     <label for="{{ p.received_date.id_for_label }}">Received</label>
                     {{ p.received_date }}
                 </div>
+                {% include "workshop/includes/_expected_days.html" with field=p.expected_days %}
                 <p class="jc-date-warn" hidden aria-live="polite"></p>
                 <button type="button" class="jc-date-done">Done</button>
             </div>

@@ -1,3 +1,4 @@
+import re
 from decimal import Decimal, InvalidOperation
 
 from django import forms
@@ -867,6 +868,44 @@ class ShopSpareRowForm(forms.ModelForm):
     round" would disagree exactly where it matters.
     """
 
+    # How many days the shop expects the part to take — see
+    # `JobCardSpareItem.expected_days`. Declared here, as text, so the reading
+    # and the message are this form's: a browser number box (`type="number"`
+    # with min/max) is deliberately NOT used, because the box lives inside the
+    # date panel, which is hidden most of the time, and a browser refusing a
+    # control it cannot focus abandons the whole save silently — the trap the
+    # Inventory quantity guard records. The server refuses instead.
+    #
+    # `jc-optional`: blank is the ordinary case and must not wear the
+    # "still to fill" hairline.
+    expected_days = forms.CharField(
+        required=False,
+        label='Expected days',
+        widget=forms.TextInput(attrs={
+            'class': 'form-control jc-expect-days jc-optional',
+            'inputmode': 'numeric',
+            'autocomplete': 'off',
+            'maxlength': '3',
+            'aria-label': 'Expected in how many days',
+            # The bound, for the panel's own warning — read from the model so
+            # the browser and the server cannot name two different limits.
+            'data-max': str(JobCardSpareItem.EXPECTED_DAYS_MAX),
+        }),
+    )
+
+    def _read_expected_days(self, cleaned):
+        """(days, problem). Only read while the part is on its way — the box
+        is hidden otherwise, so a stale value there must not refuse a save."""
+        raw = (cleaned.get('expected_days') or '').strip()
+        if not raw or not JobCardSpareItem.on_its_way(
+                cleaned.get('ordered_date'), cleaned.get('received_date')):
+            return None, None
+        top = JobCardSpareItem.EXPECTED_DAYS_MAX
+        # ASCII digits only — `str.isdigit` also accepts other scripts' digits.
+        if not re.fullmatch(r'[0-9]+', raw) or not 1 <= int(raw) <= top:
+            return None, f"Enter whole days, from 1 to {top}."
+        return int(raw), None
+
     def clean(self):
         cleaned = super().clean()
 
@@ -875,6 +914,12 @@ class ShopSpareRowForm(forms.ModelForm):
         # block a save over a row that is on its way out.
         if cleaned.get('DELETE'):
             return cleaned
+
+        days, problem = self._read_expected_days(cleaned)
+        if problem:
+            self.add_error('expected_days', problem)
+        else:
+            cleaned['expected_days'] = days
 
         # A row somebody filled in but never NAMED is refused, not dropped.
         #
@@ -947,7 +992,8 @@ JobCardSpareFormSet = inlineformset_factory(
     form=ShopSpareRowForm,
     formset=ShopSpareFormSet,
     fields=['spare_part_name', 'quantity', 'shop_name', 'status', 'unit_price',
-            'transport_cost', 'total_price', 'ordered_date', 'received_date'],
+            'transport_cost', 'total_price', 'ordered_date', 'received_date',
+            'expected_days'],
     extra=0,
     can_delete=True,
     validate_min=False,
@@ -1144,7 +1190,7 @@ class WarrantyPartForm(ShopSpareRowForm):
     """
     THE CLAIMED PART on a warranty card — one claim is one part (2026-10-07) —
     drawn as the Job Card's own spare row (2026-10-08, the owners' call): Part
-    Name · Qty · Status · Shop · Dates · Shop Price · Transport, the same boxes
+    Name · Qty · Photos · Shop · Status · Dates · Shop Price · Transport, the same boxes
     and the same rules, with no customer price (the customer pays nothing).
 
     THE SHOP PRICE IS THE SHOP'S ANSWER, in the box that already holds it:
@@ -1254,7 +1300,8 @@ class WarrantyStockForm(InventoryDrawForm):
 #: What a claimed part carries on the warranty card. The job card's widgets are
 #: reused for these, so the two pages draw one box the same way.
 WARRANTY_PART_FIELDS = ['spare_part_name', 'quantity', 'status', 'shop_name',
-                        'ordered_date', 'received_date', 'unit_price', 'transport_cost']
+                        'ordered_date', 'received_date', 'unit_price', 'transport_cost',
+                        'expected_days']
 
 class _NoNewRows:
     """Only the rows already on the card are forms — a post claiming more is

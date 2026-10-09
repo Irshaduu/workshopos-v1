@@ -747,6 +747,43 @@
     .lr-spare-shop .bi { font-size: 0.76rem; opacity: 0.75; }
     .lr-spare-noshop { font-style: italic; opacity: 0.8; }
     .lr-spare-sep { opacity: 0.4; }
+
+    {% comment %}
+    ── How long a part has been on its way (2026-10-09) ─────────────
+
+    The "On the way" row ONLY: the part and its car on the left as before, and
+    a short right-hand column — the days since it was ordered over the days
+    left. This is the one place the three parts boxes are not the same shape,
+    on the owners' request: a part that is travelling is the only one with a
+    clock running. The Received box still carries no age (its window is in the
+    heading), and `test_its_rows_are_built_exactly_like_the_two_boxes_below_it`
+    allows exactly this one difference.
+
+    A grid rather than floats, so a long part name wraps in its own column and
+    never runs under the figures. `minmax(0, 1fr)` is what lets it shrink.
+    {% endcomment %}
+    .lr-box--amber .lr-spare {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        column-gap: 12px;
+    }
+    .lr-box--amber .lr-spare-name,
+    .lr-box--amber .lr-spare-meta { grid-column: 1; }
+    .lr-spare-days {
+        grid-column: 2;
+        grid-row: 1 / span 2;
+        align-self: center;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        line-height: 1.2;
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+    }
+    .lr-days-age { font-size: 0.85rem; font-weight: 800; color: var(--color-text); }
+    .lr-days-due { font-size: 0.72rem; font-weight: 700; color: var(--color-text-muted); }
+    .lr-days-due--today { color: var(--lr-amber); }
+    .lr-days-due--late { color: var(--lr-red); }
 </style>
 {% endblock %}
 
@@ -965,6 +1002,19 @@ task; here it is a hole in the books.
                 {% else %}<span class="lr-spare-noshop">no shop recorded</span>{% endif %}
             </span>
         </span>
+        {% comment %}
+        How long it has been on its way, and how long is left (2026-10-09, the
+        owners' request): "2d" over "13 left", "due today" in amber, "2 late"
+        in red. The second line exists only when somebody typed the expected
+        days in the job card's date panel. Worked out in the view
+        (`part_wait`); the template only prints it.
+        {% endcomment %}
+        {% if spare.wait_age %}
+        <span class="lr-spare-days" title="Ordered {{ spare.ordered_date|date:'j M' }}{% if spare.expected_days %} · expected in {{ spare.expected_days }} day{{ spare.expected_days|pluralize }}{% endif %}">
+            <span class="lr-days-age">{{ spare.wait_age }}</span>
+            {% if spare.wait_due %}<span class="lr-days-due{% if spare.wait_state %} lr-days-due--{{ spare.wait_state }}{% endif %}">{{ spare.wait_due }}</span>{% endif %}
+        </span>
+        {% endif %}
     </a>
     {% endwith %}
     {% empty %}

@@ -346,14 +346,64 @@ class TheSpareRowKeepsEveryFieldItPostsTests(JobCardFormBase):
             status='ORDERED', ordered_date=date.today())
 
     def test_the_columns_are_in_the_order_the_owner_asked_for(self):
+        """
+        Part Name · Qty · Photos · Shop · Status · Dates · the money
+        (2026-10-09). Shop before Status, so the "Expected in" card that
+        choosing Ordered opens names a shop already picked; Status beside the
+        Dates it is worked out from.
+        """
         thead = self.spare_table()['thead']
-        wanted = ['Part Name', 'Qty', 'Status', 'Shop', 'Dates',
+        wanted = ['Part Name', 'Qty', '>Shop<', 'Status', 'Dates',
                   'Shop Price', 'Transport', 'Customer Price']
         positions = [thead.find(w) for w in wanted]
         self.assertNotIn(-1, positions, 'a spare column heading went missing')
         self.assertEqual(positions, sorted(positions),
                          'Spare Parts columns are no longer Part Name · Qty · '
-                         'Status · Shop · Dates · Shop Price · Transport · Customer Price')
+                         'Shop · Status · Dates · Shop Price · Transport · Customer Price')
+
+    def test_the_photo_column_sits_between_qty_and_shop(self):
+        """
+        The camera column renders only when photo storage is set up, which it
+        is not under test — so its place is checked in the SOURCE, in the
+        heading and in the live rows alike.
+        """
+        source = self.source()
+        thead = source.split('col-part" style="min-width: 320px;">Part Name</th>',
+                             1)[1].split('</thead>', 1)[0]
+        live = source.split('<tbody id="spare-list">', 1)[1].split('</tbody>', 1)[0]
+        for name, chunk, first, last in (
+                ('heading', thead, 'col-qty">Qty', 'col-shop'),
+                ('live row', live, 'form.quantity', 'col-shop')):
+            at = chunk.find('col-photo')
+            self.assertGreater(at, chunk.find(first), '%s: Photos is before Qty' % name)
+            self.assertLess(at, chunk.find(last), '%s: Photos is after Shop' % name)
+
+    def test_the_shop_box_is_narrow_enough_to_keep_status_on_screen(self):
+        """
+        A laptop and a tablet both show 768px of this table (measured
+        2026-10-09). At the old 220px Shop, the Status column after it ran from
+        706 to 826px — 58px of the box changed most, hidden behind a sideways
+        scroll. 160px brings it to 766px. Every place the width is declared
+        moves together, the warranty card's row included, or the widest one
+        wins.
+        """
+        import re
+        sources = {
+            'job card': self.source(),
+            'warranty card': open('workshop/templates/workshop/warranty/warranty_card.html',
+                                  encoding='utf-8').read(),
+            'warranty row': open('workshop/templates/workshop/warranty/_warranty_part_row.html',
+                                 encoding='utf-8').read(),
+        }
+        for name, text in sources.items():
+            for width in re.findall(r'class="col-shop"[^>]*min-width:\s*(\d+)px', text):
+                self.assertLessEqual(int(width), 160, '%s: a Shop cell is %spx' % (name, width))
+            for width in re.findall(r'shop-name-select"\s*style="min-width:\s*(\d+)px', text):
+                self.assertLessEqual(int(width), 144, '%s: a Shop box is %spx' % (name, width))
+        rule = self.source().split('.col-shop {', 1)[1].split('}', 1)[0]
+        self.assertIn('min-width: 160px', rule)
+        box = self.source().split('.col-shop .form-select {', 1)[1].split('}', 1)[0]
+        self.assertIn('min-width: 144px', box)
 
     def test_every_posting_field_still_renders(self):
         html = self.rendered()
@@ -541,9 +591,12 @@ class TheSpareRowKeepsEveryFieldItPostsTests(JobCardFormBase):
         live = source.split('<tbody id="spare-list">', 1)[1].split('</tbody>', 1)[0]
 
         def order(chunk):
+            # `form.status`, never a bare `status`: the row's own
+            # `data-original-status` attribute comes first in both chunks, so a
+            # bare token matched it and could never see the cell move.
             found = []
-            for token in ('quantity', 'status', 'shop_name', 'ordered_date',
-                          'received_date', 'unit_price', 'total_price'):
+            for token in ('form.quantity', 'col-photo', 'shop_name', 'form.status',
+                          'ordered_date', 'received_date', 'unit_price', 'total_price'):
                 at = chunk.find(token)
                 if at != -1:
                     found.append((at, token))

@@ -343,15 +343,15 @@ opens a warranty card lands here through `jobcard_edit`'s redirect.
                                 <th class="col-idx" scope="col" aria-label="Row number">#</th>
                                 <th class="ps-3 col-part" style="min-width: 320px;">Part Name</th>
                                 <th class="text-center col-qty">Qty</th>
-                                <th class="col-status">Status</th>
                                 {% if photos_configured %}
                                 <th class="col-photo text-center" scope="col" aria-label="Photos" title="Photos">
                                     <i class="bi bi-camera"></i>
                                 </th>
                                 {% endif %}
                                 {% if is_office %}
-                                <th class="col-shop" style="min-width: 220px;">Shop</th>
+                                <th class="col-shop" style="min-width: 160px;">Shop</th>
                                 {% endif %}
+                                <th class="col-status">Status</th>
                                 <th class="{% if not is_office %}pe-4{% endif %}" style="min-width: 138px;">Dates</th>
                                 {% if is_office %}
                                 <th class="col-price text-nowrap">Shop Price (₹)</th>

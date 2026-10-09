@@ -428,6 +428,63 @@ on `document`, because a per-element version works on saved rows and silently do
 nothing on every row added by "+ Add Spare".
 → `test_the_status_is_derived_from_the_dates_by_one_rule`
 
+**"EXPECTED IN __ DAYS" — HOW LONG THE SHOP SAID A PART WOULD TAKE**
+(2026-10-09, the owners' request). `JobCardSpareItem.expected_days` (`0090`),
+optional, a third line in the date panel under Received
+(`includes/_expected_days.html`, on the job card's rows, its "+ Add Spare"
+template and the warranty card's row). The Live Report's "On the way" box
+prints it as "2d" over "13 left" — "due today" amber, "2 late" red — through
+`dashboard.part_wait`, which counts from the ORDERED date.
+
+- **ONE RULE: it means something only while the part is ON ITS WAY** — ordered,
+  not yet received (`JobCardSpareItem.on_its_way`). `save()` clears it
+  otherwise (and on a warehouse draw), the form only reads it then, and the
+  panel shows the line only then. The DAYS are stored as typed, never a date,
+  so correcting the ordered date moves the countdown with it.
+- **Choosing Ordered asks in the app's ONE question card**, read top to
+  bottom in one glance: the PART as the headline, its SHOP under it, then one
+  sentence — "Expected in [ ] days" — and **Done** / **Skip** (the owners'
+  choice, 2026-10-09, after trying the whole date panel at the Dates column
+  and then a small box under the Status). Part and shop are STACKED, not side
+  by side, so a long part name never pushes the shop onto a broken line. It is
+  `wsConfirm` with its `input` option (`lead` / `unit` either side of the
+  box), never a dialog of this page's own. Skip
+  leaves the part Ordered with no days; Done copies the number into the row's
+  own box in the date panel — the only copy — where the chip shows and changes
+  it later. The card refuses an unusable figure with the server's words and
+  greys Done. ⚠ **Only a change a person made (`isTrusted`)** — the
+  dates→status rule re-fires the select's change in script while a date is
+  typed in the panel. **Enter is Done in both boxes, never a save.**
+- ⚠ **THE CHOICE IS READ IN THE CAPTURE PHASE**, before `spare_autofill.js`
+  sees it. Ordered → Pending is reverted by that file while its "Status
+  Revert" dialog asks, so a bubbling listener read "Ordered" and re-opened the
+  box behind the dialog (found from the owner's screenshot). The question
+  then comes a turn later (`setTimeout`), once the ordered date is in, and
+  never while another modal is open.
+- ⚠ **THE SHOP LINE IS OFFICE AND OWNER ONLY, AND "No shop" IS RED.** Read
+  off the row's VISIBLE shop select (`select.shop-name-select`): Floor is
+  shown no shop anywhere, so a red "No shop" it cannot fix would be a door it
+  can see and not open — Floor's card has no shop line. Shop names are typed
+  by people and the line is markup, so it is escaped (`shopLine`).
+- ⚠ **A CARD ON EVERY ORDER WAS ADVISED AGAINST, AND THE OWNERS CHOSE IT**
+  after trying both. The case against, kept in case staff start pressing Skip
+  unread: the revert dialog guards something being ERASED, this is an optional
+  number on the commonest status change. The small box under the Status is the
+  fallback.
+- ⚠ **THE CARD'S SHORT BOX IS THE DELETE REASON BOX, RESET ON EVERY OPEN.**
+  `wsConfirm({input: {value, unit, inputmode, maxlength, label, check}})`
+  turns the card's one text box short; `ask()` puts the placeholder, limit,
+  unit, warning and `inputmode` back first on every open, so a days box can
+  never leak into the next delete dialog, and Enter answers only the short
+  box — in a reason box it would confirm a delete by reflex.
+- ⚠ **A TEXT BOX, NEVER `type="number"` with min/max** — the box sits in a
+  panel that is hidden most of the time, and a browser refusing a control it
+  cannot focus abandons the whole save silently. The server refuses (1–365,
+  `EXPECTED_DAYS_MAX`, read by the panel's warning from `data-max`), and the
+  panel says the same words as you type.
+- It moves no money and no stock, and `settlement.py` never chases it.
+→ `workshop/tests/test_expected_days.py`
+
 **A SPARE-SHOP PAYMENT IS DATED BY THE DAY THE MONEY MOVED, and that date is
 typed.** `SpareShopPayment` carried only `created_at` (`auto_now_add`) while its
 sibling `inventory.SupplierPayment` has had a `date` column since day one — so
@@ -8814,7 +8871,25 @@ blank.
 ⚠ **`#empty-spare-form` must be reordered in the same edit** — it is cloned by
 script.js and would otherwise lay an added row one column adrift of its header, with
 nothing in the browser to say so.
-→ `test_the_added_row_template_matches_the_live_rows`
+→ `test_the_added_row_template_matches_the_live_rows` — it reads `form.status`,
+never a bare `status`: the row's own `data-original-status` attribute came first in
+both chunks, so until 2026-10-09 it could not see the Status cell move.
+
+**THE SPARE PARTS COLUMNS ARE Part Name · Qty · 📷 · Shop · Status · Dates · the
+money** (2026-10-09, the owner's order). The part first, then its journey in the
+order it happens: SHOP before Status, so the "Expected in" card that choosing
+Ordered opens names a shop already picked rather than a red "No shop"; STATUS
+beside the Dates it is worked out from. The warranty card's claimed-part row
+follows it cell for cell.
+
+⚠ **THE SHOP BOX IS 160px (`.col-shop`; the select 144px), SO THE STATUS STAYS ON
+THE FIRST SCREEN.** A laptop and a tablet both show 768px of this table. At the old
+220px the Status ran 706–826px — 58px of the box changed most, behind a sideways
+scroll; now 646–766 on the job card and 640–760 on the warranty card. The cost: about
+100px for a shop's name, so a name longer than about "Fluid Manjeri" is cut off inside
+the box. Put to the owner beside the alternative (📷 after Dates, Shop kept wide), and
+this was chosen. **Widen nothing left of Status without measuring again.**
+→ `test_the_shop_box_is_narrow_enough_to_keep_status_on_screen`
 
 **On the parts tables the row you are in is NAMED by a sticky number and LIT by a
 focus tint** — two marks, two questions.
@@ -9553,6 +9628,12 @@ enforced.
 → `test_its_rows_are_built_exactly_like_the_two_boxes_below_it` asserts the row
 shape against "On the way" rather than against a list of class names, so the
 age chip cannot come back by accident.
+
+⚠ **ONE STATED EXCEPTION: an "On the way" row carries `lr-spare-days`**
+(2026-10-09, the owners' request) — how long the part has been ordered over
+how long is left (see "Expected in __ days" under Spare parts). A part that is
+travelling is the only one with a clock running. The test allows exactly that
+one class, and still refuses any age on the Received box.
 
 ⚠ **THE WINDOW IS LOAD-BEARING, NOT A TIDY-UP.** Nearly every shop spare on a
 live card is already RECEIVED — **43 of 45** on the development data — so
@@ -10910,7 +10991,7 @@ python manage.py runserver
 ```
 
 ```bash
-# Full test suite — 90 files, 3,111 tests (counted 2026-10-08). Always SQLite (see below).
+# Full test suite — 91 files, 3,157 tests (counted 2026-10-09). Always SQLite (see below).
 # ⚠ IT RUNS AFTER A **MAJOR** UPDATE, NOT BEFORE EVERY COMMIT (the owner's call,
 # 2026-09-20) — and "major" is decided by BLAST RADIUS, measured, or the word
 # quietly comes to mean "never". FULL suite: any model, migration, form, signal,
@@ -11428,8 +11509,8 @@ table into the general roster at `/manage/?section=staff`. Only
 
 # Testing conventions
 
-Tests live in `workshop/tests/` and `inventory/` — **90 files, 3,111 tests**,
-re-counted 2026-10-08. (`workshop/tests/` is 84 `test_*.py` plus `tests.py`;
+Tests live in `workshop/tests/` and `inventory/` — **91 files, 3,157 tests**,
+re-counted 2026-10-09. (`workshop/tests/` is 85 `test_*.py` plus `tests.py`;
 `inventory/` is 5, one of which is `tests_suppliers.py` and so is missed by a
 `test_*.py` glob — which is why the two halves used to be written down wrong.)
 

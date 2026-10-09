@@ -674,7 +674,13 @@ class WhatLandedRecentlyIsListedApartTests(LiveReportTestCase):
         """The owner's instruction, asserted as the invariant rather than as a
         list of classes: whatever a row in "On the way" is made of, a row here
         is made of the same things. It carried an arrival-age chip for one
-        revision and that is what this stops coming back."""
+        revision and that is what this stops coming back.
+
+        ONE stated exception (2026-10-09, the owners' request): an "On the way"
+        row carries `lr-spare-days` — how long the part has been ordered and
+        how long is left — because a part that is travelling is the only one
+        with a clock running. Everything else must still match, and the green
+        box must still carry no age at all."""
         card = self._car('KL07AA8888')
         self._arrival(0, name='Landed Part', card=card)
         JobCardSpareItem.objects.create(
@@ -689,8 +695,10 @@ class WhatLandedRecentlyIsListedApartTests(LiveReportTestCase):
                          .split('</section>', 1)[0])
             return set(re.findall(r'class="(lr-spare[a-z-]*)"', block))
 
-        self.assertEqual(row_classes('lr-box--green'),
-                         row_classes('lr-box--amber'))
+        amber = row_classes('lr-box--amber')
+        self.assertIn('lr-spare-days', amber)
+        self.assertNotIn('lr-spare-days', row_classes('lr-box--green'))
+        self.assertEqual(row_classes('lr-box--green'), amber - {'lr-spare-days'})
 
     def test_it_is_drawn_as_the_same_kind_of_box_as_its_neighbours(self):
         """Every rule that makes a parts box a parts box names all three.

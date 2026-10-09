@@ -1,0 +1,21 @@
+{% comment %}
+"Expected in [ 15 ] days" — the third line of a spare row's date panel
+(2026-10-09, the owners' request). Included by the Job Card's live rows, its
+"+ Add Spare" template and the warranty card's row, so the three cannot drift.
+
+It is shown only while the part is ON ITS WAY — ordered, not yet received —
+by `refreshDateChips()` in `_date_chip.html`, the same rule `save()` keeps
+(`JobCardSpareItem.on_its_way`). It ships `hidden`, so a page whose script did
+not run shows nothing rather than a box with no meaning.
+
+It sits BELOW Received rather than between the two dates: when Received is
+filled the line disappears, and below it that moves nothing under the
+person's finger. Optional — blank saves as "nobody gave a day".
+{% endcomment %}
+<div class="jc-date-field jc-date-expect" hidden>
+    <label for="{{ field.id_for_label }}">Expected in</label>
+    <div class="jc-expect-row">
+        {{ field }}
+        <span class="jc-expect-unit">days</span>
+    </div>
+</div>

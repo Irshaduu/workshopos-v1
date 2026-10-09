@@ -1618,6 +1618,24 @@ class JobCardSpareItem(models.Model):
     shop = models.ForeignKey('SpareShop', on_delete=models.SET_NULL, null=True, blank=True, related_name='spare_items', help_text="Linked SpareShop profile")
     ordered_date = models.DateField(blank=True, null=True, db_index=True, help_text="Auto-filled when status → ORDERED")
     received_date = models.DateField(blank=True, null=True, db_index=True, help_text="Auto-filled when status → RECEIVED")
+
+    # HOW MANY DAYS THE SHOP SAID THE PART WOULD TAKE (2026-10-09, the owners'
+    # request) — typed into the date panel when a part is marked Ordered, and
+    # read by the Live Report's "On the way" box as "2d · 13 left". Optional:
+    # blank means nobody gave a day, and the box shows only how long the part
+    # has been ordered. The DAYS are stored, as typed, never a computed date —
+    # so correcting the ordered date moves the expected day with it.
+    #
+    # It only means something while the part is ON ITS WAY (ordered, not yet
+    # received), so `save()` clears it otherwise — the same rule that shows or
+    # hides the box on the job card (`on_its_way`). It moves no money and no
+    # stock, and nothing chases it.
+    expected_days = models.PositiveSmallIntegerField(
+        blank=True, null=True,
+        help_text="Days the shop expects the part to take, counted from the ordered date")
+    #: The longest wait the box accepts. Anything longer is a typo.
+    EXPECTED_DAYS_MAX = 365
+
     original_vehicle_info = models.CharField(max_length=255, blank=True, null=True, help_text="Stores car details if unassigned from a job card")
 
     # ⚠ WARRANTY — WHICH PART THIS ONE REPLACES (2026-10-07). Set only on a
@@ -1637,6 +1655,12 @@ class JobCardSpareItem(models.Model):
         'OldBillPartLine', on_delete=models.SET_NULL, null=True, blank=True, editable=False,
         related_name='replaced_by',
         help_text="Warranty: the Excel-era old bill line this claimed part replaces")
+
+    @staticmethod
+    def on_its_way(ordered, received):
+        """Ordered and not yet received — the only time the expected days mean
+        anything. One rule for `save()`, the form and the job card's panel."""
+        return bool(ordered) and not received
 
     def save(self, *args, **kwargs):
         if self.spare_part_name:
@@ -1720,6 +1744,13 @@ class JobCardSpareItem(models.Model):
         # carries one.
         if self.source == self.SOURCE_INVENTORY:
             self.transport_cost = None
+
+        # The expected days belong to a SHOP part that is on its way — a draw
+        # never travelled, and once a part has arrived (or its order date is
+        # gone) there is nothing left to count down to.
+        if self.source == self.SOURCE_INVENTORY or not self.on_its_way(
+                self.ordered_date, self.received_date):
+            self.expected_days = None
 
         # Which shop this row was billed to BEFORE this save. Moving a spare from
         # one shop to another has to refresh both ledgers: only refreshing the new

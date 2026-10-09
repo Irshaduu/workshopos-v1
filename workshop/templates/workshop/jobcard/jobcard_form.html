@@ -1271,11 +1271,14 @@
         min-width: 280px;
         width: 100%;
     }
+    /* 160px, not 220: it keeps the Status column, which sits after the Shop,
+       on the 768px of table a laptop or a tablet shows. See the column-order
+       note above the Spare Parts table. */
     .col-shop {
-        min-width: 220px !important;
+        min-width: 160px !important;
     }
     .col-shop .form-select {
-        min-width: 200px !important;
+        min-width: 144px !important;
         width: 100%;
     }
 
@@ -2104,14 +2107,25 @@ grey".
                         <!-- Standard HTML Table -->
                         <table class="table table-borderless align-middle mb-0" style="min-height: 80px;">
                             {% comment %}
-                            Column order, on the owner's instruction: Part Name ·
-                            ⋮ · Qty · Status · Shop · Dates · Shop Price ·
-                            Transport · Customer Price. It follows the order the row is
-                            actually filled in — what the part is, how many, where
-                            it has got to, who it came from — with the money last,
-                            where Office picks the row up afterwards. The Shop
-                            moved up from between the dates and the prices; the
-                            two date columns collapsed into one.
+                            Column order, on the owner's instruction (2026-10-09):
+                            Part Name · ⋮ · Qty · Photos · Shop · Status · Dates ·
+                            Shop Price · Transport · Customer Price. The part
+                            first — what it is, how many, its photo — then its
+                            journey in the order it happens: who it is ordered
+                            from, where it has got to, when. Shop sits before
+                            Status so the "Expected in" card that choosing
+                            Ordered opens names a shop already picked; Status sits
+                            beside Dates because it is worked out from them. The
+                            money is last, where Office picks the row up
+                            afterwards.
+
+                            ⚠ THE SHOP BOX IS 160px SO THE STATUS STAYS ON THE
+                            FIRST SCREEN. Laptop and tablet both show 768px of
+                            this table; at the old 220px Shop the Status box ran
+                            58px past that edge — half the box changed most,
+                            behind a sideways scroll. 160px leaves ~100px for a
+                            shop's name; a longer one is cut off inside the box.
+                            Widen nothing to its left without measuring again.
 
                             Transport sits BETWEEN the two prices (2026-10-01): the
                             money reads left to right as what we paid the shop,
@@ -2132,9 +2146,8 @@ grey".
                                     <th class="col-idx" scope="col" aria-label="Row number">#</th>
                                     <th class="ps-3 col-part" style="min-width: 320px;">Part Name</th>
                                     <th class="text-center col-qty">Qty</th>
-                                    <th class="col-status">Status</th>
                                     {% comment %}
-                                    Photos, between Status and Shop on the owner's instruction. It
+                                    Photos, between Qty and Shop on the owner's instruction. It
                                     costs the table ~56px of WIDTH — which it already scrolls, by a
                                     documented 432px even on a laptop — and no row HEIGHT, which is
                                     the dimension that actually hurts: anything that grows a row
@@ -2163,8 +2176,9 @@ grey".
                                     </th>
                                     {% endif %}
                                     {% if request.user|has_group:"Office" or request.user|has_group:"Owner" or request.user.is_superuser %}
-                                    <th class="col-shop" style="min-width: 220px;">Shop</th>
+                                    <th class="col-shop" style="min-width: 160px;">Shop</th>
                                     {% endif %}
+                                    <th class="col-status">Status</th>
                                     <th class="{% if not request.user|has_group:'Office' and not request.user|has_group:'Owner' and not request.user.is_superuser %}pe-4{% endif %}" style="min-width: 138px;">Dates</th>
                                     {% if request.user|has_group:"Office" or request.user|has_group:"Owner" or request.user.is_superuser %}
                                     <th class="col-price text-nowrap">Shop Price (₹)</th>
@@ -2214,9 +2228,6 @@ grey".
                                     <td class="col-qty">
                                         {{ s_form.quantity }}
                                     </td>
-                                    <td class="col-status">
-                                        {{ s_form.status }}
-                                    </td>
                                     {% if photos_configured %}
                                     {% comment %}
                                     An UNSAVED row leaves this cell empty rather than showing a box.
@@ -2230,10 +2241,10 @@ grey".
                                     </td>
                                     {% endif %}
                                     {% if request.user|has_group:"Office" or request.user|has_group:"Owner" or request.user.is_superuser %}
-                                    <td class="col-shop" style="min-width: 220px;">
+                                    <td class="col-shop" style="min-width: 160px;">
                                         <select name="{{ s_form.shop_name.html_name }}"
                                                 class="form-select form-select-sm shop-name-select"
-                                                style="min-width: 200px; width: 100%;">
+                                                style="min-width: 144px; width: 100%;">
                                             <option value="">-- Shop --</option>
                                             {% for shop in spare_shops %}
                                             <option value="{{ shop.pk }}"
@@ -2244,6 +2255,9 @@ grey".
                                         </select>
                                     </td>
                                     {% endif %}
+                                    <td class="col-status">
+                                        {{ s_form.status }}
+                                    </td>
                                     {% comment %}
                                     ONE chip, both dates behind it.
 
@@ -2282,6 +2296,7 @@ grey".
                                                     <label for="{{ s_form.received_date.id_for_label }}">Received</label>
                                                     {{ s_form.received_date }}
                                                 </div>
+                                                {% include "workshop/includes/_expected_days.html" with field=s_form.expected_days %}
                                                 {% comment %}
                                                 Written by `refreshDateChips()` the
                                                 moment the two boxes disagree —
@@ -2528,9 +2543,6 @@ is now true, and the column width is unchanged at every breakpoint.
                 <td class="col-qty">
                     {{ spare_formset.empty_form.quantity }}
                 </td>
-                <td class="col-status">
-                    {{ spare_formset.empty_form.status }}
-                </td>
                 {% comment %}
                 The clone template must carry this cell too, or every row added by
                 "+ Add Spare" sits one column adrift of its header — and nothing in
@@ -2542,10 +2554,10 @@ is now true, and the column width is unchanged at every breakpoint.
                 <td class="col-photo text-center"></td>
                 {% endif %}
                 {% if request.user|has_group:"Office" or request.user|has_group:"Owner" or request.user.is_superuser %}
-                <td class="col-shop" style="min-width: 220px;">
+                <td class="col-shop" style="min-width: 160px;">
                     <select name="spares-__prefix__-shop_name"
                             class="form-select form-select-sm shop-name-select"
-                            style="min-width: 200px; width: 100%;">
+                            style="min-width: 144px; width: 100%;">
                         <option value="">-- Shop --</option>
                         {% for shop in spare_shops %}
                         <option value="{{ shop.pk }}">{{ shop.name }}</option>
@@ -2553,6 +2565,9 @@ is now true, and the column width is unchanged at every breakpoint.
                     </select>
                 </td>
                 {% endif %}
+                <td class="col-status">
+                    {{ spare_formset.empty_form.status }}
+                </td>
                 <td class="{% if not request.user|has_group:'Office' and not request.user|has_group:'Owner' and not request.user.is_superuser %}pe-4{% endif %}">
                     <div class="jc-dates">
                         <button type="button" class="jc-date-chip"
@@ -2569,6 +2584,7 @@ is now true, and the column width is unchanged at every breakpoint.
                                 <label>Received</label>
                                 {{ spare_formset.empty_form.received_date }}
                             </div>
+                            {% include "workshop/includes/_expected_days.html" with field=spare_formset.empty_form.expected_days %}
                             {# Cloned with the row, so an added spare warns too. #}
                             <p class="jc-date-warn" hidden aria-live="polite"></p>
                             <button type="button" class="jc-date-done">Done</button>

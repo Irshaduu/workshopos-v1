@@ -1187,6 +1187,27 @@ select.status-fixed {
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--wcf-ink) 18%, transparent);
 }
 
+/* The SHORT box (`wsConfirm({input: ...})`) — a few characters and a unit,
+   centred under the question: the job card's "Expected in [ 15 ] days". */
+.wcf-reason[hidden] { display: none; }
+.wcf-reason--short { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.wcf-reason--short input {
+    width: 6.5rem;
+    text-align: center;
+    font-size: 1.05rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.wcf-unit { font-size: 0.9rem; color: var(--color-text-muted, #64748b); }
+.wcf-unit[hidden] { display: none; }
+/* Something the question needed and the record does not have — the job
+   card's "No shop" under a part being ordered. Red: it is the gap to fill. */
+.wcf-missing { color: #b91c1c; font-weight: 700; }
+.wcf-warn { margin: -8px 0 16px; font-size: 0.78rem; font-weight: 700; color: #b91c1c; }
+.wcf-warn[hidden] { display: none; }
+/* Three classes, so it outranks the hover brightening declared below. */
+.wcf-card .wcf-btn--yes:disabled { opacity: 0.5; cursor: not-allowed; filter: none; }
+
 .wcf-actions { display: flex; gap: 10px; }
 
 .wcf-btn {
@@ -1228,6 +1249,75 @@ select.status-fixed {
 @media (prefers-reduced-motion: reduce) {
     .wcf-btn { transition: none; }
     .wcf-btn:active { transform: none; }
+}
+
+/* -------------------------------------------------------------------------
+   THE SHORT-BOX CARD  —  #wcfDialog[data-mode="input"]
+   -------------------------------------------------------------------------
+   The job card's "Expected in __ days", asked every time a part is marked
+   Ordered — the card the workshop sees most (2026-10-09, the owners' ask to
+   make it perfect). Same card, same theme values; only its SHAPE is tuned,
+   and only while `confirm.js` has set `data-mode="input"`, which it clears on
+   every open — a delete dialog never inherits any of this.
+
+   * SMALLER AND TIGHTER: a 44px disc, less air, the part and its shop close
+     together. The question is the sentence, not the furniture around it.
+   * THE SENTENCE IS DARK, NOT GREY. "Expected in" and "days" are half of the
+     question; muted, they read as labels round a box rather than as one line.
+   * THE BOX IS SIZED FOR ITS ANSWER — at most three digits, so 4.75rem wide,
+     big bold numerals, and a visible border before it is focused.
+   * ONE LINE UNDER IT IS ALWAYS THERE: "Due Tue 21 Oct" in quiet slate, or
+     the refusal in red, or nothing — but the height is kept, so the card
+     never jumps while somebody types.
+   * SKIP | DONE SIDE BY SIDE AT EVERY WIDTH. The shared card stacks below
+     420px because its labels can be long ("It's something else"); these are
+     two short words, and stacking cost the phone ~60px of card.
+   * ON A TOUCH SCREEN IT SITS HIGH, NOT CENTRED. Choosing Ordered focuses the
+     box, and a phone's keyboard covers the bottom of the screen without
+     moving a fixed dialog — so a centred card put Done under the keys. Keyed
+     on `pointer: coarse`, which is the input that brings a keyboard up, so a
+     landscape Floor tablet gets it too and a laptop stays centred.
+   ------------------------------------------------------------------------- */
+#wcfDialog[data-mode="input"] .wcf-dialog { max-width: 340px; }
+#wcfDialog[data-mode="input"] .wcf-card { padding: 22px 20px 18px; }
+#wcfDialog[data-mode="input"] .wcf-icon {
+    width: 44px; height: 44px;
+    margin-bottom: 10px;
+    font-size: 1.15rem;
+}
+#wcfDialog[data-mode="input"] .wcf-text { margin: 3px 0 18px; }
+#wcfDialog[data-mode="input"] .wcf-reason { margin: 0; gap: 12px; }
+#wcfDialog[data-mode="input"] .wcf-unit {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #334155;
+}
+#wcfDialog[data-mode="input"] .wcf-reason--short input {
+    width: 4.75rem;
+    height: 52px;
+    padding: 0 6px;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 12px;
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: #0f172a;
+    caret-color: var(--wcf-ink);
+}
+#wcfDialog[data-mode="input"] .wcf-reason--short input:focus { border-color: var(--wcf-ink); }
+#wcfDialog[data-mode="input"] .wcf-warn {
+    min-height: 1.2rem;
+    margin: 8px 0 16px;
+    font-size: 0.8rem;
+    line-height: 1.2rem;
+}
+#wcfDialog[data-mode="input"] .wcf-warn--hint { color: #475569; font-weight: 600; }
+#wcfDialog[data-mode="input"] .wcf-actions { flex-direction: row; }
+#wcfDialog[data-mode="input"] .wcf-btn { min-height: 48px; font-size: 0.95rem; }
+@media (pointer: coarse) {
+    #wcfDialog[data-mode="input"] .modal-dialog-centered {
+        align-items: flex-start;
+        padding-top: 8vh;
+    }
 }
 
 /* -------------------------------------------------------------------------

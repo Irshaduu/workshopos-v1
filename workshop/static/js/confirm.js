@@ -43,6 +43,32 @@
     var instance = null;   // the Bootstrap Modal, built on first open
     var settle = null;     // the resolver of the question currently on screen
     var wired = false;
+    var check = null;      // `opts.input.check` of the question on screen, or null
+    var hint = null;       // `opts.input.hint` of the question on screen, or null
+
+    /*
+     * The short box's one line under it. The caller's `check(value)` returns a
+     * sentence or '': a sentence shows in red and greys Confirm, so the card
+     * cannot answer with a value the caller would refuse. Otherwise the
+     * caller's `hint(value)` may say what the value MEANS — the job card's
+     * "Due Tue 21 Oct" — quietly, in the same line.
+     *
+     * The short box keeps that line on screen even when it is empty, so the
+     * card never changes height under somebody's finger as they type.
+     */
+    function validate() {
+        var reason = el('wcfReason');
+        var warn = el('wcfWarn');
+        var yes = el('wcfYes');
+        var problem = (check && reason) ? (check(reason.value) || '') : '';
+        var note = (!problem && hint && reason) ? (hint(reason.value) || '') : '';
+        if (warn) {
+            warn.textContent = problem || note;
+            warn.classList.toggle('wcf-warn--hint', !problem && !!note);
+            warn.hidden = !(problem || note) && !check;
+        }
+        if (yes) { yes.disabled = !!problem; }
+    }
 
     /* ---------------------------------------------------------------- utils */
 
@@ -181,8 +207,22 @@
                 yes.style.pointerEvents = 'none';
                 yes.style.opacity = '0.6';
                 var reason = el('wcfReason');
-                finish({ ok: true, reason: reason ? reason.value.trim() : '' });
+                var typed = reason ? reason.value.trim() : '';
+                // `value` is the same text, named for the short-box callers.
+                finish({ ok: true, reason: typed, value: typed });
                 if (instance) { instance.hide(); }
+            });
+        }
+
+        var field = el('wcfReason');
+        if (field) {
+            field.addEventListener('input', validate);
+            // Enter answers the SHORT box (only there — in a delete dialog's
+            // reason box it would confirm a delete by reflex).
+            field.addEventListener('keydown', function (e) {
+                if (e.key !== 'Enter' || !check) { return; }
+                e.preventDefault();
+                if (yes && !yes.disabled) { yes.click(); }
             });
         }
 
@@ -242,14 +282,58 @@
             if (opts.html) { text.innerHTML = opts.html; }
             else { text.textContent = opts.text || ''; }
 
+            /*
+             * The one text box, put back to the REASON box on every open — so a
+             * short box shown by one caller can never leak its placeholder,
+             * unit or limit into the next delete dialog — and then made the
+             * short box only when this caller asks for one (`opts.input`:
+             * value, placeholder, lead, unit, inputmode, maxlength, label,
+             * check, hint, enterkeyhint) — `lead` and `unit` are the words
+             * either side of it, so the line reads as one sentence:
+             * "Expected in [ 15 ] days".
+             *
+             * `data-mode="input"` on the dialog is what the compact layout in
+             * style.css hangs off, so it too is cleared on every open — a
+             * delete dialog must never inherit the short card's shape.
+             */
+            var input = opts.input || null;
+            var unit = el('wcfUnit');
+            var lead = el('wcfLead');
+            box.removeAttribute('data-mode');
             reason.value = '';
-            wrap.hidden = !opts.reason;
-            if (opts.reason) { reason.setAttribute('aria-label', 'Reason for ' + opts.reason); }
+            reason.placeholder = 'Reason (optional)';
+            reason.maxLength = 255;
+            reason.removeAttribute('inputmode');
+            reason.removeAttribute('enterkeyhint');
+            reason.setAttribute('aria-label', opts.reason ? 'Reason for ' + opts.reason : 'Reason');
+            wrap.classList.remove('wcf-reason--short');
+            if (unit) { unit.hidden = true; unit.textContent = ''; }
+            if (lead) { lead.hidden = true; lead.textContent = ''; }
+            check = null;
+            hint = null;
+            if (input) {
+                box.setAttribute('data-mode', 'input');
+                wrap.classList.add('wcf-reason--short');
+                reason.value = input.value || '';
+                reason.placeholder = input.placeholder || '';
+                if (input.maxlength) { reason.maxLength = input.maxlength; }
+                if (input.inputmode) { reason.setAttribute('inputmode', input.inputmode); }
+                // A phone keyboard's action key reads "Done" and presses Enter,
+                // which answers the short box.
+                if (input.enterkeyhint) { reason.setAttribute('enterkeyhint', input.enterkeyhint); }
+                reason.setAttribute('aria-label', input.label || opts.title || 'Value');
+                if (unit && input.unit) { unit.textContent = input.unit; unit.hidden = false; }
+                if (lead && input.lead) { lead.textContent = input.lead; lead.hidden = false; }
+                check = input.check || null;
+                hint = input.hint || null;
+            }
+            wrap.hidden = !(opts.reason || input);
 
             yes.textContent = opts.ok || (opts.single ? 'OK' : 'Confirm');
             no.textContent = opts.cancel || 'Cancel';
             yes.style.pointerEvents = '';
             yes.style.opacity = '';
+            validate();   // clears the warning, re-enables Confirm, or checks the prefill
 
             hideParent(opts.parent || null).then(function () {
                 // The question may have been settled while the parent was
@@ -260,10 +344,11 @@
                 if (!instance) { instance = new window.bootstrap.Modal(box); }
                 instance.show();
 
-                if (opts.reason) {
+                if (opts.reason || input) {
                     box.addEventListener('shown.bs.modal', function once() {
                         box.removeEventListener('shown.bs.modal', once);
                         reason.focus();
+                        if (input) { reason.select(); }
                     });
                 }
             });

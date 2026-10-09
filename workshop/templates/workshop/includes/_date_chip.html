@@ -15,6 +15,7 @@ The markup each row carries:
       <div class="jc-date-pop" hidden role="dialog" aria-label="Ordered and received dates">
         <div class="jc-date-field"><label>Ordered</label> the ordered_date input (.ordered-date)</div>
         <div class="jc-date-field"><label>Received</label> the received_date input (.received-date)</div>
+        the "Expected in __ days" line, from _expected_days.html (shown while on its way)
         <p class="jc-date-warn" hidden aria-live="polite"></p>
         <button type="button" class="jc-date-done">Done</button>
       </div>
@@ -182,6 +183,20 @@ after filling a date box in script, which fires no event.
         color: #94a3b8;
         cursor: not-allowed;
     }
+
+    /* "Expected in [ 15 ] days" — see `_expected_days.html`. A short box with
+       its unit beside it; `.form-control`'s full width is overridden here, the
+       selector being two classes to its one. */
+    .jc-date-expect[hidden] { display: none; }
+    .jc-expect-row { display: flex; align-items: center; gap: 0.45rem; }
+    .jc-expect-row .jc-expect-days {
+        width: 4.5rem;
+        flex: 0 0 auto;
+        text-align: center;
+        font-size: 0.82rem;
+        font-variant-numeric: tabular-nums;
+    }
+    .jc-expect-unit { font-size: 0.78rem; color: var(--color-text-muted); }
     @media (hover: none) { .jc-date-chip { min-height: 44px; } }
 </style>
 <script>
@@ -229,6 +244,68 @@ after filling a date box in script, which fires no event.
         return '';
     }
 
+    // The browser half of `ShopSpareRowForm._read_expected_days`, with the same
+    // words. Read only while the part is on its way — the box is hidden
+    // otherwise, so a stale value there is not worth a warning. The limit
+    // rides on the box itself (`data-max`, from the model).
+    function daysProblem(raw, box) {
+        raw = (raw || '').trim();
+        if (!raw) return '';
+        var top = parseInt(box.getAttribute('data-max'), 10) || 365;
+        var n = /^[0-9]+$/.test(raw) ? parseInt(raw, 10) : 0;
+        return (n >= 1 && n <= top) ? '' : 'Enter whole days, from 1 to ' + top + '.';
+    }
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+
+    // The shop under the part in the "Expected in" card — the shop is who
+    // gave the days. "No shop" in red when none is picked yet, because an
+    // ordered part with no shop has no ledger to land on. Only where the Shop
+    // column is SHOWN (`select.shop-name-select` — Office and Owner): Floor is
+    // shown no shop anywhere, and a red "No shop" it cannot fix would be a
+    // door it can see and not open. Shop names are typed by people, so the
+    // text is escaped before it becomes markup.
+    function shopLine(row) {
+        var shop = row.querySelector('select.shop-name-select');
+        if (!shop) return '';
+        var picked = shop.value && shop.selectedIndex > -1
+            ? (shop.options[shop.selectedIndex].text || '').trim() : '';
+        return picked
+            ? '<i class="bi bi-shop" aria-hidden="true"></i> ' + escapeHtml(picked)
+            : '<span class="wcf-missing">No shop</span>';
+    }
+
+    // "Due Tue 21 Oct" under the box in the "Expected in" card — the day the
+    // number lands on, so "12" is read as a date and a slip (120 for 12) shows
+    // at once. Counted from the row's ORDERED date (today when it has none
+    // yet), exactly as `dashboard.part_wait` counts, so the card and the Live
+    // Report can never name two different days. Dates are built from LOCAL
+    // parts — never `toISOString()`, the IST-morning trap `todayISO` records.
+    function dueLine(raw, row) {
+        raw = (raw || '').trim();
+        if (!/^[0-9]+$/.test(raw)) return '';
+        var from = ((row.querySelector('.ordered-date') || {}).value || todayISO()).split('-');
+        var now = todayISO().split('-');
+        if (from.length !== 3) return '';
+        var due = new Date(+from[0], +from[1] - 1, +from[2] + parseInt(raw, 10));
+        var today = new Date(+now[0], +now[1] - 1, +now[2]);
+        var gap = Math.round((due - today) / 86400000);
+        if (gap === 0) return 'Due today';
+        if (gap === 1) return 'Due tomorrow';
+        var day = due.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+        if (due.getFullYear() !== today.getFullYear()) day += ' ' + due.getFullYear();
+        return (gap < 0 ? 'Was due ' : 'Due ') + day;
+    }
+
+    function expectProblem(box, ordered, received) {
+        if (!box || !ordered || received) return '';
+        return daysProblem(box.value, box);
+    }
+
     function refreshChips() {
         // `document`, not `form`: the `#empty-spare-form` template lives
         // outside the form and is cloned on "+ Add Spare", so its chip has to
@@ -245,9 +322,15 @@ after filling a date box in script, which fires no event.
             var chip = cell.querySelector('.jc-date-chip');
             var blank = !ordered && !received;
 
+            // "Expected in __ days" is shown only while the part is on its way
+            // — ordered, not yet received — the rule `save()` keeps.
+            var expect = cell.querySelector('.jc-date-expect');
+            if (expect) expect.hidden = !(rawOrdered && !rawReceived);
+
             // Say it here, beside the two boxes, rather than letting the save
             // come back refused with the reason four screens up the page.
-            var problem = pairProblem(rawOrdered, rawReceived);
+            var problem = pairProblem(rawOrdered, rawReceived)
+                || expectProblem(cell.querySelector('.jc-expect-days'), rawOrdered, rawReceived);
             var warn = cell.querySelector('.jc-date-warn');
             if (warn) {
                 warn.textContent = problem;
@@ -314,24 +397,27 @@ after filling a date box in script, which fires no event.
         openDates = null;
     }
 
+    function openPanel(chip) {
+        var pop = chip.parentElement.querySelector('.jc-date-pop');
+        if (!pop) return;
+        // `nearest` on both axes: if the chip is already fully visible this
+        // scrolls nothing at all, and if it is half off the side of the table
+        // it brings just that chip in rather than jumping the page. A panel is
+        // positioned against the chip, so the chip has to be somewhere a
+        // person can see before it is placed.
+        chip.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        openDates = { chip: chip, pop: pop };
+        placePop(chip, pop);
+        chip.setAttribute('aria-expanded', 'true');
+    }
+
     document.addEventListener('click', function (e) {
         if (!e.target.closest) return;
         var chip = e.target.closest('.jc-date-chip');
         if (chip) {
-            var pop = chip.parentElement.querySelector('.jc-date-pop');
             var reopening = openDates && openDates.chip === chip;
             closeDates();
-            if (!reopening && pop) {
-                // `nearest` on both axes: if the chip is already fully visible
-                // this scrolls nothing at all, and if it is half off the side of
-                // the table it brings just that chip in rather than jumping the
-                // page. A panel is positioned against the chip, so the chip has
-                // to be somewhere a person can see before it is placed.
-                chip.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-                openDates = { chip: chip, pop: pop };
-                placePop(chip, pop);
-                chip.setAttribute('aria-expanded', 'true');
-            }
+            if (!reopening) openPanel(chip);
             return;
         }
         if (e.target.closest('.jc-date-done')) { closeDates(); return; }
@@ -339,8 +425,100 @@ after filling a date box in script, which fires no event.
         if (openDates && !e.target.closest('.jc-date-pop')) closeDates();
     });
 
+    // ==========================================================
+    // ORDERED ASKS "EXPECTED IN HOW MANY DAYS?" — IN THE APP'S OWN CARD
+    // ==========================================================
+    // The owners' request (2026-10-09): marking a part Ordered asks how many
+    // days the shop said. After trying a small box under the Status, the
+    // owners chose a centred question card — the app's ONE card (`wsConfirm`,
+    // `_confirm_dialog.html`) with its short box, never a second dialog
+    // design. Skip answers "nobody gave a day" and leaves the part Ordered;
+    // Done copies the number into the row's own box (the one in the date
+    // panel), which is the only copy of the value, so the chip's panel shows
+    // and changes it later. The card refuses an unusable figure with the
+    // server's own words before Done can be pressed.
+    //
+    // Only a change a PERSON made (`isTrusted`). The dates→status rule in
+    // `spare_autofill.js` re-fires this select's change in script whenever a
+    // date is typed INSIDE the panel, and reacting to that would steal the
+    // cursor out of the date box mid-typing.
+    //
+    // ⚠ READ IN THE CAPTURE PHASE, BEFORE `spare_autofill.js` SEES IT — what
+    // the person CHOSE, not what the select says afterwards. A move BACK
+    // (Ordered → Pending) is reverted by that file's own listener — the select
+    // reads "Ordered" again while its "Status Revert" dialog asks — so reading
+    // the value after it asked the days behind that dialog, as if the part had
+    // just been ordered. Found from the owner's screenshot.
+    //
+    // The question waits a turn (`setTimeout`), so that file has written today
+    // into the ordered box first; a move back from Received then finds the
+    // "Expected in" line hidden (received is still there) and asks nothing,
+    // and nothing is asked while another dialog is open.
+    document.addEventListener('change', function (e) {
+        var select = e.target;
+        if (!e.isTrusted || select.value !== 'ORDERED'
+                || !/-status$/.test(select.name || '') || !select.closest) return;
+        setTimeout(function () {
+            if (select.value !== 'ORDERED' || document.body.classList.contains('modal-open')) return;
+            if (!window.wsConfirm) return;
+            var row = select.closest('.spare-row');
+            var box = row && row.querySelector('.jc-expect-days');
+            if (!box || box.disabled || box.readOnly) return;
+            refreshChips();
+            if (box.closest('.jc-date-expect').hidden) return;   // nothing to count from
+            closeDates();
+            var name = ((row.querySelector('input[name$="-spare_part_name"]') || {}).value || '').trim();
+            window.wsConfirm({
+                // Read in one glance, top to bottom: WHICH part, from WHO,
+                // then the one question as a sentence — "Expected in [ ] days".
+                title: name || 'Unnamed part',
+                html: shopLine(row),
+                icon: 'bi-truck',
+                theme: 'info',
+                ok: 'Done',
+                cancel: 'Skip',
+                input: {
+                    value: box.value,
+                    lead: 'Expected in',
+                    unit: 'days',
+                    inputmode: 'numeric',
+                    enterkeyhint: 'done',
+                    maxlength: 3,
+                    label: 'Expected in how many days',
+                    check: function (raw) { return daysProblem(raw, box); },
+                    hint: function (raw) { return dueLine(raw, row); }
+                }
+            }).then(function (answer) {
+                if (!answer.ok) return;
+                box.value = answer.value;
+                // Typed into the row's own box as far as the page can tell: the
+                // card's dirty mark, the chip and its warning all follow.
+                box.dispatchEvent(new Event('input', { bubbles: true }));
+                select.focus({ preventScroll: true });
+            });
+        }, 0);
+    }, true);
+
+    // Typing in the box re-checks it at once, like the two dates.
+    document.addEventListener('input', function (e) {
+        if (e.target.classList && e.target.classList.contains('jc-expect-days')) refreshChips();
+    });
+
     document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape') closeDates();
+        if (e.key === 'Escape') { closeDates(); return; }
+        // Enter in the days box is Done — never a save of the whole card,
+        // which is what Enter in a text box inside a form otherwise does.
+        if (e.key === 'Enter' && e.target.classList
+                && e.target.classList.contains('jc-expect-days')) {
+            e.preventDefault();
+            refreshChips();
+            var pop = e.target.closest('.jc-date-pop');
+            var done = pop && pop.querySelector('.jc-date-done');
+            if (done && done.disabled) return;   // the warning line says why
+            var chip = openDates && openDates.chip;
+            closeDates();
+            if (chip) chip.focus();
+        }
     });
     // The panel is `fixed`, so it is pinned to the viewport rather than to the
     // chip — it has to be told when the chip moves. Capture on scroll, because

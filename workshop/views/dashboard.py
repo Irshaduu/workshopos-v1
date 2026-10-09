@@ -311,6 +311,41 @@ def _age_label(days):
     return f'{days}d'
 
 
+def part_wait(ordered_date, expected_days, today):
+    """How long a part has been on its way, and how long is left —
+    `('2d', '13 left', '')`, `('15d', 'due today', 'today')`,
+    `('17d', '2 late', 'late')`.
+
+    The Live Report's "On the way" box prints this on each row (2026-10-09, the
+    owners' request). The age is `_age_label` — the page's ONE age wording, so
+    a part ordered today reads "New" exactly as a car admitted today does. The
+    second half exists only when somebody typed the expected days; it counts
+    from the ORDERED date, so correcting that date moves it too. Late is the
+    one state worth a colour (red) — the template decides nothing.
+
+    A part with no ordered date has nothing to count from and returns blanks.
+    """
+    if not ordered_date:
+        return '', '', ''
+    age = max((today - ordered_date).days, 0)
+    if not expected_days:
+        return _age_label(age), '', ''
+    left = expected_days - age
+    if left > 0:
+        return _age_label(age), f'{left} left', ''
+    if left == 0:
+        return _age_label(age), 'due today', 'today'
+    return _age_label(age), f'{-left} late', 'late'
+
+
+def _stamp_part_wait(spares, today):
+    """Attach `wait_age`, `wait_due` and `wait_state` to each part, in Python
+    for the reason `_stamp_age` gives."""
+    for spare in spares:
+        spare.wait_age, spare.wait_due, spare.wait_state = part_wait(
+            spare.ordered_date, spare.expected_days, today)
+
+
 def _stamp_age(jobs, today):
     """Attach `age_label` to each card, in Python.
 
@@ -607,6 +642,7 @@ def live_report(request):
         awaited.filter(status='ORDERED')
         .order_by(F('ordered_date').asc(nulls_last=True), 'pk')
     )
+    _stamp_part_wait(ordered_spares, today)
     pending_spares = list(
         awaited.filter(status='PENDING')
         .order_by('job_card__admitted_date', 'pk')

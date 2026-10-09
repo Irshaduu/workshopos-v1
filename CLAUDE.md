@@ -4358,9 +4358,21 @@ Letter**, not A4, so every bill they print is being scaled or clipped.
 ### The saved PDF's name
 
 **`document.title` IS the filename, and it reaches the file on two of the three
-platforms this workshop uses.** `invoice.document_title()` builds it for both
-documents — "Audi A4 KL 10 AA 1003 (JB-26-154)", searchable by car, plate and
-document number at once, in a folder of hundreds. It is not decoration.
+platforms this workshop uses.** `invoice.document_title()` builds it for every
+customer document — `Audi A4 KL 10 AA 1003 JB-26-154`, then `… EST-26-012`,
+`… WR-26-004`, `… All Invoices`, `… Service History` — searchable by car, plate
+and document number at once, in a folder of hundreds. It is not decoration. The
+spare shop's printed report uses the same rule: `Spare Club Purchase Report`.
+
+⚠ **ONLY LETTERS, DIGITS, SPACES AND DASHES — AND NO BRACKETS ROUND THE NUMBER
+(2026-10-09).** It was `Audi A4 KL 10 AA 1003 (JB-26-154)`. Brackets are legal
+on every filesystem, and the owner's own test still had ChatGPT and Gemini refuse
+that PDF as empty, while the same file renamed without them uploaded fine. So
+`invoice.safe_filename()` is an **allowlist**, not the list of nine characters
+Windows forbids: make and model are free text, and a typed `C-Class (W205)` would
+otherwise bring the brackets straight back. Anything else is removed, not
+replaced (`A/4` reads `A4`). The owner chose the plain space over a ` - `
+separator because the space-only name is the one actually tested.
 
 ⚠ **THE DESTINATION DECIDES IT ON WINDOWS, AND THAT IS NOT OUR BUG TO FIX.**
 Chrome and Edge's own **Save as PDF** pre-fills the name box from the title.
@@ -4380,15 +4392,37 @@ is an editable name field in Save to Files — so **pressing Print copies the
 title to the clipboard** and the owner pastes it. That is the ceiling on iPhone:
 the paste is made effortless, never automatic.
 
-Four things are load-bearing, and three of them cost a real defect if changed:
+**ONE COPY OF IT, `includes/_print_name_copy.html`, ON ALL FIVE PAGES** — the
+invoice, the estimate, All Invoices (which also draws one old bill and the
+warranty slip), the service history and the spare shop's report. It was four
+hand-kept copies of one handler, and the shop report had none. A page needs a
+`js-print` class on its Print button and `js/sound.js` for the tone.
 
-- **IT IS SILENT, ON THE OWNER'S DECISION.** No toast, no confirmation. There
-  are two owners, both were told once, and a message on every bill is confirming
-  what cannot surprise anyone — the settle dialog's own rule. The trade is that
-  the burden moves to the code comment and to this entry.
-- ⚠ **THEREFORE IT LOOKS EXACTLY LIKE DEAD CODE.** Nothing on screen changes
-  when it runs, nothing in the Django suite can execute it, and deleting it
-  breaks no behaviour that fails loudly — the owners simply lose the workflow.
+Five things are load-bearing, and three of them cost a real defect if changed:
+
+- **SILENT WHEN IT WORKS, ON THE OWNER'S DECISION.** No toast, no confirmation.
+  There are two owners, both were told once, and a message on every bill is
+  confirming what cannot surprise anyone — the settle dialog's own rule.
+- ⚠ **SAID WHEN IT FAILS, BEFORE THE PRINT BOX OPENS (2026-10-09, the owner's
+  call).** A failed copy leaves the LAST file's name on the clipboard, so a paste
+  on iPhone names this bill after the previous car — with nothing on screen to
+  say so. So the press is HELD until the copy answers (milliseconds): copied →
+  the print box opens as before; refused, or no clipboard at all on plain HTTP →
+  NO print box, one small amber line ("File name not copied — don't paste. Press
+  Print again to continue.") and the `warning` tone; a second press while the
+  line shows prints straight away; no answer in 1.5 s → prints anyway, silently.
+  ⚠ **The first build warned AFTER opening the print box, and the owner's own
+  test showed the line landing BEHIND Chrome's print box** — on iPhone the sheet
+  covers the whole screen — so it was seen only after the paste it warns about.
+  Held in the capture listener with `stopPropagation`, which keeps the button's
+  inline `onclick` from firing; the script then calls `window.print()` itself.
+  Measured in Chrome with the write forced each way: all four cases as above; at
+  375px the line sits 16px from each edge and nothing scrolls sideways. ⚠ **Not
+  yet checked on a real iPhone**: there the print sheet opens from a promise a
+  few milliseconds after the tap — check it once on the deployed (HTTPS) site.
+- ⚠ **WHEN IT WORKS IT LOOKS EXACTLY LIKE DEAD CODE.** Nothing on screen
+  changes, nothing in the Django suite can execute it, and deleting it breaks no
+  behaviour that fails loudly — the owners simply lose the workflow.
   `TheSavedPdfIsNamedForTheCarTests` is the tripwire, and it was verified by
   deleting the handler and watching two tests fail.
 - ⚠ **CAPTURE, ON `document`, NEVER A LISTENER ON THE BUTTON.** The inline
@@ -4396,10 +4430,12 @@ Four things are load-bearing, and three of them cost a real defect if changed:
   dialog is dismissed — and at the target, listeners run in registration order
   whatever their capture flag. So anything bound to the button itself copies
   AFTER the dialog has already closed, which is silently useless.
-- **IT CAN NEVER STOP A BILL PRINTING.** `onclick="window.print()"` stays inline,
-  so printing does not depend on this script having run at all, and the copy is
-  wrapped. `navigator.clipboard` is **undefined on plain `http://`**, which is
-  not hypothetical: serving the Floor tablet over the LAN would do it.
+- **IT CAN NEVER MAKE PRINTING IMPOSSIBLE.** `onclick="window.print()"` stays
+  inline, so a page whose script never ran prints as it always did; a failed copy
+  costs one more press; a copy that never answers prints after 1.5 s.
+  `navigator.clipboard` is **undefined on plain `http://`**, which is not
+  hypothetical: serving the Floor tablet over the LAN would do it — there every
+  print takes two presses, because the copy genuinely cannot work.
 
 *Considered and NOT done:* a **server-generated PDF** with
 `Content-Disposition: filename=...`, which is the only thing that would name the
@@ -4410,10 +4446,7 @@ workshop prints, which is the "two implementations of one thing" failure this
 codebase refuses everywhere else. Revisit only if the iPhone becomes how bills
 actually reach customers.
 
-⚠ **`shop_print.html` is NOT covered and titles itself `Print - <shop name>`**,
-so a saved copy of a spare shop's report is called "Print - …". That is a
-separate defect in that template's title, not something the clipboard would fix.
-→ `TheSavedPdfIsNamedForTheCarTests`
+→ `TheSavedPdfIsNamedForTheCarTests`, `TheTitleIsTheFilenameTests`
 
 ### WhatsApp the customer — a door into the chat, never the file
 

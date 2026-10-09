@@ -17,6 +17,7 @@ from ..models import (JobCardSpareItem, SpareShop, SpareShopPayment, SpareShopDi
                       SPARE_SHOP_OWED, DeletionLog)
 from ..discounts import read_discount
 from ..return_to import safe_return
+from ..invoice import safe_filename
 from ..decorators import office_required, owner_required, staff_required, is_office_or_owner, is_owner
 from ..notifications import notify, notify_dated_back
 from ..spare_dates import pair_problem
@@ -723,6 +724,9 @@ def spare_shop_print(request, pk):
 
     return render(request, 'workshop/spare_shops/shop_print.html', {
         'shop': shop,
+        # The saved PDF's name, by the customer documents' own rule: only
+        # letters, digits, spaces and dashes. It was "Print - <shop>".
+        'document_title': safe_filename(f'{shop.name} Purchase Report') or 'Purchase Report',
         # This template extends no base, so it carries no nav and no drawer —
         # and in the installed app there is no browser chrome either. The
         # `?back=` brings the FILTER back with the reader; the template falls

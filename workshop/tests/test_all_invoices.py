@@ -211,7 +211,7 @@ class TheDocumentItselfTests(AllInvoicesTestCase):
     def test_it_is_named_to_file_beside_the_bills_it_contains(self):
         self._visit(date(2026, 1, 1))
         self.assertIn(
-            '<title>Audi A4 KL 10 AA 1000 (All Invoices)</title>',
+            '<title>Audi A4 KL 10 AA 1000 All Invoices</title>',
             self._render(),
         )
 

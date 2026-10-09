@@ -902,7 +902,7 @@ class TheSheetItselfTests(ServiceHistoryPageTestCase):
     def test_the_title_is_the_saved_pdf_name(self):
         self._visit(date(2026, 1, 1))
         self.assertIn(
-            '<title>Audi A4 KL 10 AA 1000 (Service History)</title>',
+            '<title>Audi A4 KL 10 AA 1000 Service History</title>',
             self._render(),
         )
 

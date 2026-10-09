@@ -884,8 +884,8 @@ def car_all_invoices(request, registration):
         'registration': registration,
         'count': len(cards) + len(old_bills),
         # Named like the invoices it contains, so it files beside them:
-        #     Audi A4 KL11 AJ 2266 (JB-26-037).pdf
-        #     Audi A4 KL11 AJ 2266 (All Invoices).pdf
+        #     Audi A4 KL11 AJ 2266 JB-26-037.pdf
+        #     Audi A4 KL11 AJ 2266 All Invoices.pdf
         'document_title': document_title(newest, 'All Invoices', 'All Invoices'),
         # A document must never render with no way out at all — see the sheet
         # view. Same fallback: this one describes exactly one car.

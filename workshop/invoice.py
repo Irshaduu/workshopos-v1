@@ -61,6 +61,7 @@ two subtotals are the same rows re-added for display, and equal it by
 construction (see `JobCard.update_totals`).
 """
 
+import re
 from decimal import Decimal, ROUND_HALF_UP
 from dataclasses import dataclass
 from typing import Optional
@@ -182,15 +183,29 @@ def settlement(jobcard):
     }
 
 
-# Characters that are not legal in a filename on Windows, and are mangled or
-# silently rewritten on the others. Stripped rather than substituted: a
-# registration number containing one of these is a data anomaly, and a bill
-# named "KL11 AJ 2266" reads better than one named "KL11_AJ_2266".
-_FILENAME_UNSAFE = str.maketrans({character: None for character in '/\\:*?"<>|\r\n\t'})
+# ONLY LETTERS, DIGITS, SPACES AND DASHES REACH A FILENAME — an allowlist, not a
+# list of bad characters. It was the list, of the nine Windows forbids, and that
+# let brackets through: the owner's own test (2026-10-09) had ChatGPT and Gemini
+# refuse "Audi A4 KL 10 AA 1003 (JB-26-154).pdf" as empty while the same file
+# renamed without the brackets uploaded fine. Make and model are free text, so a
+# typed "C-Class (W205)" would bring them straight back under any list short of
+# this one. Removed rather than substituted, as before: "A/4" reads "A4".
+_FILENAME_UNSAFE = re.compile(r'[^A-Za-z0-9 \-]')
 
 # Long enough for any real brand + model + plate + number, short enough that no
 # filesystem or mail client truncates it into something ambiguous.
 MAX_TITLE_LENGTH = 120
+
+
+def safe_filename(text):
+    """
+    `text` with every character outside the allowlist removed and its spacing
+    tidied — '' when nothing usable is left, so the caller decides the fallback.
+    Shared by `document_title` and the spare shop's printed report, so no page
+    that can be saved as a PDF names itself by a second rule.
+    """
+    spaced = ' '.join(str(text or '').split())
+    return ' '.join(_FILENAME_UNSAFE.sub('', spaced).split())
 
 
 def document_title(record, number, fallback):
@@ -201,8 +216,8 @@ def document_title(record, number, fallback):
     every browser suggests `document.title` as the filename. So the title is not
     decoration: it is the name of the file an owner ends up with in a folder of
     hundreds. "Invoice — Formula D" told them nothing there; "Audi A4 KL11 AJ
-    2266 (JB-26-037)" is searchable by car, by plate and by document number at
-    once.
+    2266 JB-26-037" is searchable by car, by plate and by document number at
+    once. No brackets round the number — see `_FILENAME_UNSAFE`.
 
     Everything is optional except the result. An estimate may legitimately carry
     no make, no model and no registration (most of the quote form is optional by
@@ -213,19 +228,15 @@ def document_title(record, number, fallback):
     browser fall back to the URL.
     """
     parts = [
-        ' '.join(str(value).split())
-        for value in (
-            getattr(record, 'brand_name', '') or '',
-            getattr(record, 'model_name', '') or '',
-            getattr(record, 'registration_number', '') or '',
-        )
+        safe_filename(getattr(record, field, '') or '')
+        for field in ('brand_name', 'model_name', 'registration_number')
     ]
     car = ' '.join(part for part in parts if part)
 
-    number = ' '.join(str(number or '').split())
-    title = f"{car} ({number})" if car and number else (car or number or fallback)
+    number = safe_filename(number)
+    title = f"{car} {number}" if car and number else (car or number or fallback)
 
-    return title.translate(_FILENAME_UNSAFE).strip()[:MAX_TITLE_LENGTH]
+    return title[:MAX_TITLE_LENGTH].strip()
 
 
 def whatsapp_chat_url(contact):

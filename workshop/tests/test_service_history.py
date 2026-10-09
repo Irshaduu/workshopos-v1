@@ -828,7 +828,7 @@ class TheSavedPdfIsNamedForTheCarTests(ServiceHistoryTestCase):
         self._visit(date(2026, 1, 1), '60000')
         self.assertEqual(
             self._build()['document_title'],
-            'Audi A4 KL 10 AA 1000 (Service History)',
+            'Audi A4 KL 10 AA 1000 Service History',
         )
 
     def test_a_later_correction_to_the_car_is_what_reaches_the_customer(self):

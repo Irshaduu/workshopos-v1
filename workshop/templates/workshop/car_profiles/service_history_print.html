@@ -9,8 +9,8 @@
     PDF, so this lands in a customer's folder beside their bills under one
     naming scheme:
 
-        Audi A4 KL11 AJ 2266 (JB-26-037).pdf
-        Audi A4 KL11 AJ 2266 (Service History).pdf
+        Audi A4 KL11 AJ 2266 JB-26-037.pdf
+        Audi A4 KL11 AJ 2266 Service History.pdf
 
     Built in workshop/service_history.py, which imports `document_title` from
     invoice.py rather than reimplementing it, so the two cannot drift.
@@ -1484,8 +1484,8 @@
 
         {% comment %}
         `onclick` stays inline and `js-print` is only a hook for the clipboard
-        copy at the foot of this file. Printing must not depend on that script
-        having run at all — see the comment there.
+        copy in includes/_print_name_copy.html. Printing must not depend on that
+        script having run at all — see the comment there.
         {% endcomment %}
         <button type="button" class="btn btn-primary js-print" onclick="window.print()">
             <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5 1h6a1 1 0 0 1 1 1v3H4V2a1 1 0 0 1 1-1zM3 6h10a2 2 0 0 1 2 2v4a1 1 0 0 1-1 1h-2v-2H4v2H2a1 1 0 0 1-1-1V8a2 2 0 0 1 2-2zm2 6h6v3H5v-3z"/></svg>
@@ -2166,49 +2166,10 @@
         </div>
     </div>
 
+    {% include 'workshop/includes/_print_name_copy.html' %}
+
     <script>
         (function () {
-            // ---------------------------------------------------------------
-            // The saved PDF's name.
-            //
-            // document.title is what every browser suggests in Save as PDF, so
-            // putting it on the clipboard as well rescues the two platforms
-            // that ignore it: Microsoft Print to PDF opens its dialog with the
-            // name box BLANK whatever the page says, and iOS files every Safari
-            // print under its own date-stamped name. One paste fixes both.
-            //
-            // CAPTURE, on `document`, never a listener on the button:
-            // window.print() BLOCKS until the dialog is dismissed, and at the
-            // target phase listeners run in registration order whatever their
-            // capture flag — so anything bound to the button itself would copy
-            // AFTER the dialog had already closed.
-            //
-            // IT CAN NEVER STOP A PRINT. The copy is wrapped and the inline
-            // onclick is left in place, so printing does not depend on this
-            // script having run at all. navigator.clipboard is UNDEFINED
-            // outside a secure context -- plain unencrypted HTTP -- which is
-            // not hypothetical: serving the Floor tablet over the LAN does
-            // exactly that.
-            //
-            // (That sentence spells the scheme out in words rather than
-            // writing it. This comment is SERVED to the browser, and the
-            // customer-document tests read every absolute URL on the page, so
-            // the literal would report the sheet as fetching something it does
-            // not fetch.)
-            // ---------------------------------------------------------------
-            document.addEventListener('click', function (event) {
-                var node = event.target;
-                if (!node || !node.closest || !node.closest('.js-print')) return;
-                try {
-                    if (navigator.clipboard && navigator.clipboard.writeText) {
-                        // Synchronously inside the gesture; iOS drops user
-                        // activation if the write is deferred.
-                        navigator.clipboard.writeText(document.title)
-                            .catch(function () { /* denied, or no permission */ });
-                    }
-                } catch (ignored) { /* printing outranks the clipboard */ }
-            }, true);
-
             // Fit the sheet to a narrow screen by SCALING it, never by
             // reflowing it. A document that rearranged itself to fit would
             // stop being a preview of what prints. Print clears the transform
@@ -2263,9 +2224,8 @@
             // (It names that table in lower case rather than quoting its
             // heading. This comment is SERVED — an inline script is part of
             // the page — so the literal would make the sheet report itself as
-            // still carrying the table on a car that has none. The same trap
-            // the clipboard comment below spells a URL scheme out in words to
-            // avoid.)
+            // still carrying the table on a car that has none — the trap
+            // CLAUDE.md records for a URL scheme written in a served comment.)
             //
             // It leaves the sheet on SCREEN as well as on paper, which is the
             // point rather than a side effect: this document is a preview of

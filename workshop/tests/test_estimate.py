@@ -203,7 +203,7 @@ class TheEstimateNamesItselfLikeTheBillTests(TestCase):
 
         self.assertEqual(
             build_estimate(est)['document_title'],
-            f"Audi A4 KL11 AJ 2266 ({est.estimate_number})",
+            f"Audi A4 KL11 AJ 2266 {est.estimate_number}",
         )
 
     def test_a_quote_with_no_car_details_still_names_itself(self):
@@ -219,7 +219,7 @@ class TheEstimateNamesItselfLikeTheBillTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(
-            f"<title>Audi A4 KL11 AJ 2266 ({est.estimate_number})</title>",
+            f"<title>Audi A4 KL11 AJ 2266 {est.estimate_number}</title>",
             response.content.decode(),
         )
 

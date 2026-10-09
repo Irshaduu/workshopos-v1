@@ -1261,7 +1261,7 @@ class TheTitleIsTheFilenameTests(InvoiceTestCase):
         job = self._jobcard(
             brand_name='Audi', model_name='A4', registration_number='KL11 AJ 2266',
         )
-        expected = f"Audi A4 KL11 AJ 2266 ({job.bill_number})"
+        expected = f"Audi A4 KL11 AJ 2266 {job.bill_number}"
 
         self.assertEqual(build_invoice(job)['document_title'], expected)
         self.assertIn(f"<title>{expected}</title>", self._render(job).content.decode())
@@ -1276,7 +1276,7 @@ class TheTitleIsTheFilenameTests(InvoiceTestCase):
 
         self.assertEqual(
             build_invoice(job)['document_title'],
-            f"KL11 AJ 2266 ({job.bill_number})",
+            f"KL11 AJ 2266 {job.bill_number}",
         )
 
     def test_a_car_with_nothing_recorded_falls_back_to_the_document_number(self):
@@ -1321,7 +1321,27 @@ class TheTitleIsTheFilenameTests(InvoiceTestCase):
 
         self.assertEqual(
             build_invoice(job)['document_title'],
-            f"Audi A4 KL11 AJ 2266 ({job.bill_number})",
+            f"Audi A4 KL11 AJ 2266 {job.bill_number}",
+        )
+
+    def test_only_letters_digits_spaces_and_dashes_reach_the_filename(self):
+        """
+        Brackets are legal on every filesystem and still broke the file: the
+        owner's test (2026-10-09) had ChatGPT and Gemini refuse
+        "Audi A4 KL 10 AA 1003 (JB-26-154).pdf" as empty, while the same file
+        renamed without them uploaded fine. So the number is no longer wrapped
+        in brackets, and the rule is an ALLOWLIST — make and model are free
+        text, and a typed "C-Class (W205)" must not bring them back.
+        """
+        job = self._jobcard(
+            brand_name='Mercedes-Benz', model_name='C-Class (W205) & AMG',
+            registration_number='KL 07 CD 4321',
+        )
+        title = build_invoice(job)['document_title']
+
+        self.assertRegex(title, r'^[A-Za-z0-9 \-]+$')
+        self.assertEqual(
+            title, f"Mercedes-Benz C-Class W205 AMG KL 07 CD 4321 {job.bill_number}",
         )
 
 
@@ -1554,5 +1574,71 @@ class TheSavedPdfIsNamedForTheCarTests(InvoiceTestCase):
         sheet = _sheet(self._render(self._jobcard()).content.decode())
 
         self.assertNotEqual(sheet, '')
-        for fragment in ('js-print', 'clipboard', 'window.print()'):
+        for fragment in ('js-print', 'clipboard', 'window.print()', 'copyWarn'):
             self.assertNotIn(fragment, sheet)
+
+    def _every_page(self):
+        """Every page that is saved as a PDF, rendered."""
+        from workshop.models import Estimate
+        job = self._jobcard(completed=True, completed_date=date(2026, 1, 20))
+        estimate = Estimate.objects.create(customer_name='Ramesh')
+        reg = job.registration_number
+        urls = {
+            'invoice': reverse('invoice_view', args=[job.pk]),
+            'estimate': reverse('estimate_print', args=[estimate.pk]),
+            'all invoices': reverse('car_all_invoices', args=[reg]),
+            'service history': reverse('car_service_history_sheet', args=[reg]),
+            'shop report': reverse('spare_shop_print', args=[self.shop.pk]),
+        }
+        pages = {}
+        for name, url in urls.items():
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 200, name)
+            pages[name] = response.content.decode()
+        return pages
+
+    def test_every_saved_pdf_page_carries_the_one_shared_copy(self):
+        """
+        It was four hand-kept copies of one handler, and the spare shop's report
+        had none. Now one include on all five. EXACTLY once each, so a page can
+        never carry the include and a stale inline copy registering a second
+        listener beside it.
+        """
+        for name, html in self._every_page().items():
+            with self.subTest(page=name):
+                self.assertEqual(html.count('id="copyWarn"'), 1)
+                self.assertEqual(html.count('writeText(document.title)'), 1)
+                self.assertIn('btn btn-primary js-print', html)
+                self.assertIn('onclick="window.print()"', html)
+
+    def test_a_failed_copy_is_said_before_the_print_box_opens(self):
+        """
+        Silent when the copy works (the owner's call), said when it fails
+        (2026-10-09, also theirs): a failed copy leaves the LAST file's name on
+        the clipboard, so a paste on iPhone names this bill after the previous
+        car. Said AFTER the print box opened it landed behind it — the owner's
+        own test — so the press is held until the copy answers: copied opens the
+        print box, refused or no clipboard shows the line and the tone instead,
+        and no answer in WAIT_MS prints anyway. Never on paper.
+        """
+        html = self._render(self._jobcard()).content.decode()
+
+        self.assertIn('event.stopPropagation();', html)
+        self.assertIn('if (!write) { failed(); return; }', html)
+        self.assertIn('write.then(openPrint, function', html)
+        self.assertIn('setTimeout(openPrint, WAIT_MS);', html)
+        # A second press while the line shows prints straight away.
+        self.assertIn('if (warn && warn.textContent) { clear(); return; }', html)
+        self.assertIn("WorkshopSound.play('warning')", html)
+        self.assertIn('File name not copied', html)
+        self.assertRegex(html, r'@media print \{\s*\.copy-warn \{ display: none !important; \}')
+
+    def test_the_shop_report_names_itself_by_the_same_rule(self):
+        """It was "Print - <shop>". Same allowlist as every customer document."""
+        self.shop.name = 'Pullara (Spares) & Co'
+        self.shop.save()
+        html = self.client.get(
+            reverse('spare_shop_print', args=[self.shop.pk])
+        ).content.decode()
+
+        self.assertIn('<title>Pullara Spares Co Purchase Report</title>', html)

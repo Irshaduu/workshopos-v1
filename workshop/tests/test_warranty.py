@@ -1417,7 +1417,7 @@ class TheWarrantySlipTests(WarrantyBase):
         self.assertIn('Starter motor replaced', sheet)
         self.assertIn('<td colspan="3">Starter Motor</td>', sheet)
         self.assertIn('<td class="c">1</td>', sheet)      # a blank qty prints as one
-        self.assertIn(f'({self.wr.bill_number})</title>', html)  # the saved PDF's name
+        self.assertIn(f' {self.wr.bill_number}</title>', html)  # the saved PDF's name
 
     def test_no_price_of_any_kind_is_on_the_sheet(self):
         _html, sheet = self.sheet()

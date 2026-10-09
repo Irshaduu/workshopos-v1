@@ -964,7 +964,7 @@ class OldBillsOnTheCarDocumentsTests(TestCase):
         html = response.content.decode()
         self.assertIn('JB-25-120', html)
         self.assertIn(reverse('old_bill_edit', args=[self.old.pk]), html)
-        self.assertEqual(response.context['document_title'], 'Mercedes-Benz C220d KL 07 CD 4321 (JB-25-120)')
+        self.assertEqual(response.context['document_title'], 'Mercedes-Benz C220d KL 07 CD 4321 JB-25-120')
 
     def test_a_car_known_only_from_old_bills_has_both_documents(self):
         _bill(number='JB-25-121', bill_date=date(2025, 3, 1), registration_number='HR 26 BQ 1572')

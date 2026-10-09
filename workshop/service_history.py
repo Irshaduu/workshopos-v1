@@ -826,8 +826,8 @@ def _title(live, old_bills=()):
     `document_title` is imported rather than reimplemented, so this file lands
     in a customer's folder beside their invoices under the same naming:
 
-        Audi A4 KL11 AJ 2266 (JB-26-037).pdf
-        Audi A4 KL11 AJ 2266 (Service History).pdf
+        Audi A4 KL11 AJ 2266 JB-26-037.pdf
+        Audi A4 KL11 AJ 2266 Service History.pdf
 
     The car is described by the NEWEST card there is — including one still on
     the floor, which is the most current record of what the car is called even

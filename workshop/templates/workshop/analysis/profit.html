@@ -274,6 +274,15 @@
     margin-top: 6px; padding-top: 11px; font-size: 0.92rem;
   }
   .pf-row.total .name, .pf-row.total .amt { font-weight: 800; }
+  /* A SLICE OF THE TOTAL ABOVE IT, never a line to add: no row border, muted
+     type, and the figure in slate rather than the card's red. The glyph wears
+     the warranty teal used everywhere a warranty is named. */
+  .pf-included {
+    display: flex; justify-content: space-between; gap: 12px;
+    padding-top: 3px; font-size: 0.76rem; color: var(--color-text-muted);
+  }
+  .pf-included i { color: var(--wr-ink); margin-right: 7px; }
+  .pf-included .amt { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
   /* ── Earnings breakdown ───────────────────────────────────────
      A MID-total, lighter than `.total`: Gross earnings is a staging post on
@@ -714,6 +723,20 @@
         <span class="lbl"><span class="name">Total Expenses</span></span>
         <span class="amt minus">₹{{ report.expense_total|inr }}</span>
       </div>
+
+      {% comment %}
+        WHAT WARRANTY CLAIMS COST (2026-10-09, the owners' ask) — already INSIDE
+        the total above: a claim bills nothing, and its parts sit in Spare
+        Shops, Inventory Used and Parts transport. So it says "Includes", it is
+        grey rather than red, and it carries no row border — a slice to read,
+        never a line to add. Only when there is some.
+      {% endcomment %}
+      {% if report.warranty_cost %}
+      <div class="pf-included">
+        <span><i class="bi bi-shield-check"></i>Includes warranty claims</span>
+        <span class="amt">₹{{ report.warranty_cost|inr }}</span>
+      </div>
+      {% endif %}
 
       {% comment %}
         THE WAREHOUSE NOTE IS GONE, and it is not hiding anywhere else.

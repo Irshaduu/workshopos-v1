@@ -469,6 +469,7 @@ UNFILLED_ROW_CAP = 8
 RECEIVED_WINDOW_DAYS = 5
 
 
+
 def _billed_but_unfilled():
     """Billed job cards that still have an empty box somewhere, newest first.
 
@@ -534,16 +535,68 @@ def _billed_but_unfilled():
     )
 
 
-def _attach_unfilled(jobs):
+def _warranty_unfilled():
+    """
+    COMPLETED warranty cards that still have an empty box, newest first —
+    the Live Report's "Warranty not filled" (2026-10-09, the owners' call).
+
+    A warranty card's "done" moment is Complete, the way a bill's is settling,
+    so that is where tracking starts. A part still TRAVELLING stays in the
+    parts boxes even after the car has left, and `live_report` hands those
+    parts to `_attach_unfilled` as `skip`, so it is never also a gap here. `settlement.unfilled` is the
+    authority, exactly as for "Billed but not filled" — it skips a warranty
+    card's labour, and its customer prices are ₹0 by the server's rule — and
+    this narrowing mirrors it the same way `_billed_but_unfilled` does, minus
+    the labour clause. Not paged: claims are a handful a month.
+    """
+    unfixed_concern = (
+        JobCardConcern.objects.filter(job_card=OuterRef('pk')).exclude(status='FIXED')
+    )
+    holey_shop_part = JobCardSpareItem.objects.filter(
+        job_card=OuterRef('pk'), source=JobCardSpareItem.SOURCE_SHOP,
+    ).filter(
+        Q(shop__isnull=True)
+        | Q(ordered_date__isnull=True) | Q(received_date__isnull=True)
+        | Q(unit_price__isnull=True) | Q(total_price__isnull=True)
+    )
+    unpriced_draw = JobCardSpareItem.objects.filter(
+        job_card=OuterRef('pk'),
+        source=JobCardSpareItem.SOURCE_INVENTORY,
+        total_price__isnull=True,
+    )
+    return (
+        JobCard.objects
+        .filter(live_cards(), kind=JobCard.KIND_WARRANTY, completed=True)
+        .annotate(
+            _mileage=Trim(Coalesce('mileage', Value(''))),
+            _unfixed_concern=Exists(unfixed_concern),
+            _holey_shop_part=Exists(holey_shop_part),
+            _unpriced_draw=Exists(unpriced_draw),
+        )
+        .filter(
+            Q(_mileage='')
+            | Q(lead_mechanic__isnull=True)
+            | Q(_unfixed_concern=True)
+            | Q(_holey_shop_part=True)
+            | Q(_unpriced_draw=True)
+        )
+        .select_related('lead_mechanic')
+        .prefetch_related('concerns', 'labours', 'spares')
+        .order_by(F('completed_date').desc(nulls_last=True), '-pk')
+    )
+
+
+def _attach_unfilled(jobs, skip=()):
     """Compute each card's gaps, cap the long sections, drop anything clean.
 
     Returns the rows to render. A card whose gaps come back empty is dropped
     rather than printed with nothing under it — see `_billed_but_unfilled` for
-    why that guard exists at all.
+    why that guard exists at all. `skip` is the parts another box on the page
+    already tracks (`settlement.unfilled`).
     """
     rows = []
     for job in jobs:
-        holes = unfilled(job)
+        holes = unfilled(job, skip=skip)
         if not holes:
             continue
         job.unfilled = holes
@@ -570,7 +623,8 @@ def live_report(request):
     Three questions, in the order an owner asks them:
 
       1. what has already been BILLED with holes in it — the critical one,
-         because settling is what closed the door on correcting it;
+         because settling is what closed the door on correcting it — and,
+         under it, finished WARRANTY cards with holes in them;
       2. what has just landed, which parts are travelling, and which nobody
          has ordered;
       3. who is holding which car, and what is still open on each of them —
@@ -614,13 +668,19 @@ def live_report(request):
     # (source=INVENTORY) came off the shelf already fitted, so its status
     # column means nothing — listing one as "waiting" would send someone
     # chasing a part that is already on the car.
+    #
+    # ⚠ A WARRANTY CARD'S PART IS TRACKED HERE EVEN AFTER THE CAR HAS LEFT
+    # (2026-10-09, found from the owners' own WR-26-006): with a warranty the
+    # car often goes home while the replacement is on order and comes back
+    # when it lands, so the card is completed with its part still travelling.
+    # A job card's parts still stop at completion, as before.
     awaited = (
         JobCardSpareItem.objects
         .filter(
             live_cards('job_card__'),
+            Q(job_card__completed=False) | Q(job_card__kind=JobCard.KIND_WARRANTY),
             source=JobCardSpareItem.SOURCE_SHOP,
             job_card__isnull=False,
-            job_card__completed=False,
         )
         .select_related('job_card', 'shop')
     )
@@ -648,12 +708,20 @@ def live_report(request):
         .order_by('job_card__admitted_date', 'pk')
     )
 
+
     # Paginated rather than windowed by date. This is a queue to be worked
     # down, not a period report: the heading carries the true total so an owner
     # can see the size of it, and nothing is hidden behind a filter that would
     # have to be widened to find the oldest — and worst — cards.
     page_obj = Paginator(_billed_but_unfilled(), 45).get_page(request.GET.get('page'))
     unfilled_cards = _attach_unfilled(page_obj.object_list)
+
+    # Finished warranty cards with an empty box — second on the page, absent
+    # when there are none. The count is in GAPS, like the box above it. A part
+    # still in "On the way" or "Not ordered yet" is left out of its gaps: it is
+    # travelling, not unfilled, and one part is in one place on this page.
+    journey = {s.pk for s in ordered_spares} | {s.pk for s in pending_spares}
+    warranty_unfilled = _attach_unfilled(_warranty_unfilled(), skip=journey)
 
     return render(request, 'workshop/jobcard/live_report.html', {
         'page_obj': page_obj,
@@ -665,4 +733,6 @@ def live_report(request):
         'received_window_days': RECEIVED_WINDOW_DAYS,
         'ordered_spares': ordered_spares,
         'pending_spares': pending_spares,
+        'warranty_unfilled': warranty_unfilled,
+        'warranty_unfilled_count': sum(job.unfilled.count for job in warranty_unfilled),
     })

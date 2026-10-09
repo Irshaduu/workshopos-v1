@@ -15,8 +15,8 @@ Two pages, and the split between them is the whole point of the design:
                         expense streams.
 
   /analysis/insights/   INSIGHTS — everything else. Mechanics, spare parts,
-                        inventory, vehicles, fleet accounts, shops, cashbook,
-                        operations. Loads one section at a time over AJAX so
+                        inventory, vehicles, fleet accounts, shops, warranty,
+                        cashbook, operations. Loads one section at a time over AJAX so
                         the heavy Top-N queries only run for the section
                         actually being looked at.
 
@@ -241,6 +241,7 @@ INSIGHT_SECTIONS = [
     ('vehicles',    'Vehicles',    'bi-car-front',           'Repeat cars, brands, and how often they return'),
     ('fleet',       'Fleet',       'bi-buildings',           'Fleet account volume, settlement and balances'),
     ('shops',       'Shops',       'bi-shop',                'Spare shops and supplies shops — supplied, owed and paid'),
+    ('warranty',    'Warranty',    'bi-shield-check',        'Which parts come back, whose they were, and what claims cost'),
     ('cashbook',    'Cashbook',    'bi-journal-text',        'General running costs by category, and scrap income'),
     ('operations',  'Operations',  'bi-speedometer2',        'Workload, completion and how customers pay'),
 ]
@@ -280,6 +281,7 @@ def analysis_insight_section(request, section):
         'vehicles': _insight_vehicles,
         'fleet': _insight_fleet,
         'shops': _insight_shops,
+        'warranty': _insight_warranty,
         'cashbook': _insight_cashbook,
         'operations': _insight_operations,
     }
@@ -885,6 +887,148 @@ def _insight_shops(start, end):
         'spare_paid': _sum(
             SpareShopPayment.objects.filter(is_trashed=False, date__range=(start, end)),
             F('amount')),
+    }
+
+
+# ----------------------------------------------------------------- warranty --
+#: Rows in each warranty table.
+WARRANTY_ROW_CAP = 15
+#: Car models named under a part before "+N more".
+WARRANTY_CAR_CAP = 3
+
+
+def _came_back(claims, fitted):
+    """"2 of 11 · 18%" as parts: never a bare percentage, so one claim on a
+    part fitted once reads as the 1 of 1 it is rather than an alarm."""
+    pct = float(claims / fitted * 100) if fitted else 0.0
+    # "0%" beside "1 of 300" reads as a contradiction, so a sliver says so.
+    label = 'under 1%' if 0 < pct < 1 else f'{pct:.0f}%'
+    return {'claims': claims, 'fitted': fitted, 'pct': pct, 'pct_label': label}
+
+
+def _insight_warranty(start, end):
+    """
+    Which parts come back, whose parts they were, and what claims cost
+    (2026-10-09, the owners' ask).
+
+    A warranty card carries exactly ONE part — the replacement of the part
+    that failed — and that part is a copy of the failed one: same name, same
+    product, same shop. So the claims are simply the parts on warranty cards,
+    grouped the way the Spare Parts and Inventory sections group (a shop part
+    by its lowered name, a stock part by its product).
+
+    THE TILES FOLLOW THE DATE FILTER, BY CLAIM DATE. Cost to us is
+    `engine.warranty_cost`, the Profit page's own "Includes warranty claims"
+    figure, so the two cannot disagree.
+
+    THE TABLES COUNT FROM THE START, whatever the filter: at ~30 cars a month a
+    single month is too few parts to judge a failure rate.
+
+    ⚠ A RATE, NEVER A BARE COUNT, and both sides from the system's own rows:
+      • "fitted" is every time the system fitted that part or bought from that
+        shop, on any live card — a warranty replacement is a fitting too, and
+        it is what a 2nd claim fails;
+      • "came back" counts claims against a part the SYSTEM fitted
+        (`replaces`). A claim against an Excel bill (`replaces_line`) is
+        counted beside it, never inside the rate: nobody knows how many were
+        fitted in the Excel years.
+    ⚠ A SHOP IS JUDGED ON THE PARTS IT SOLD THAT FAILED — the failed part's
+    shop (`replaces__shop`), never the shop that supplied the replacement.
+    """
+    shop, stock = JobCardSpareItem.SOURCE_SHOP, JobCardSpareItem.SOURCE_INVENTORY
+    claims = JobCardSpareItem.objects.filter(
+        live_cards('job_card__'), job_card__kind=JobCard.KIND_WARRANTY)
+
+    # --- the tiles: this period, by claim date ---------------------------
+    answers = claims.filter(job_card__admitted_date__range=(start, end),
+                            source=shop).aggregate(
+        answered=Count('id', filter=Q(unit_price__isnull=False)),
+        free=Count('id', filter=Q(unit_price=0)),
+        waiting=Count('id', filter=Q(unit_price__isnull=True)),
+    )
+    tiles = {
+        'claims': JobCard.objects.filter(
+            live_cards(), kind=JobCard.KIND_WARRANTY,
+            admitted_date__range=(start, end)).count(),
+        'cost': engine.warranty_cost(start, end),
+        **answers,
+    }
+
+    # --- the tables: since the start -------------------------------------
+    rows = (claims.annotate(key=Lower('spare_part_name'))
+                  .values('pk', 'source', 'key', 'spare_part_name', 'item_id', 'item__name',
+                          'replaces_id', 'replaces_line_id', 'replaces__shop_id',
+                          'replaces__shop__name', 'shop_id', 'unit_price',
+                          'job_card__registration_number', 'job_card__brand_name',
+                          'job_card__model_name')
+                  .order_by('job_card__admitted_date', 'pk'))
+
+    parts, shops = {}, {}
+    for r in rows:
+        by_item = r['source'] == stock and r['item_id']
+        gkey = ('item', r['item_id']) if by_item else ('name', r['key'])
+        g = parts.setdefault(gkey, {
+            'name': (r['item__name'] if by_item else r['spare_part_name']) or '—',
+            'system': 0, 'excel': 0, 'cars': {}})
+        if r['replaces_line_id']:
+            g['excel'] += 1
+        else:
+            g['system'] += 1
+        car = ' '.join(filter(None, [r['job_card__brand_name'], r['job_card__model_name']])) or 'Unknown car'
+        g['cars'].setdefault(car, set()).add(r['job_card__registration_number'])
+
+        if r['source'] == shop and r['replaces__shop_id']:
+            s = shops.setdefault(r['replaces__shop_id'], {
+                'name': r['replaces__shop__name'], 'claims': 0, 'answered': 0, 'free': 0})
+            s['claims'] += 1
+            if r['unit_price'] is not None:
+                s['answered'] += 1
+                # Free FROM THIS SHOP: its own answer, ₹0. A replacement bought
+                # elsewhere is not the shop honouring its warranty.
+                if r['unit_price'] == 0 and r['shop_id'] == r['replaces__shop_id']:
+                    s['free'] += 1
+
+    fitted = JobCardSpareItem.objects.filter(
+        live_cards('job_card__'), job_card__isnull=False).order_by()
+    name_keys = [k for t, k in parts if t == 'name']
+    item_ids = [k for t, k in parts if t == 'item']
+    by_name = dict(fitted.filter(source=shop).annotate(key=Lower('spare_part_name'))
+                         .filter(key__in=name_keys).values('key')
+                         .annotate(n=Count('id')).values_list('key', 'n')) if name_keys else {}
+    by_item = dict(fitted.filter(source=stock, item_id__in=item_ids).values('item_id')
+                         .annotate(n=Count('id')).values_list('item_id', 'n')) if item_ids else {}
+    by_shop = dict(fitted.filter(source=shop, shop_id__in=list(shops)).values('shop_id')
+                         .annotate(n=Count('id')).values_list('shop_id', 'n')) if shops else {}
+
+    part_rows = []
+    for (kind, key), g in parts.items():
+        cars = sorted(((len(regs), car) for car, regs in g['cars'].items()), key=lambda c: (-c[0], c[1]))
+        part_rows.append({
+            'name': g['name'],
+            'back': _came_back(g['system'], (by_item if kind == 'item' else by_name).get(key, 0)),
+            'excel': g['excel'],
+            'total': g['system'] + g['excel'],
+            'cars': [{'label': car, 'n': n} for n, car in cars[:WARRANTY_CAR_CAP]],
+            'more_cars': max(0, len(cars) - WARRANTY_CAR_CAP),
+        })
+    # Parts by HOW OFTEN they come back: fitting counts differ wildly between
+    # parts (a pad set forty times, a starter twice), so a rate-first order
+    # would lead with every part fitted once that failed once.
+    part_rows.sort(key=lambda p: (-p['total'], -p['back']['pct'], p['name'].lower()))
+
+    shop_rows = [{'name': s['name'], 'back': _came_back(s['claims'], by_shop.get(pk, 0)),
+                  'answered': s['answered'], 'free': s['free']}
+                 for pk, s in shops.items()]
+    # Shops by RATE: every shop sells dozens of parts, so the rate is a fair
+    # comparison — and a count would always blame the shop bought from most.
+    shop_rows.sort(key=lambda s: (-s['back']['pct'], -s['back']['claims'], s['name'].lower()))
+
+    return {
+        'tiles': tiles,
+        'part_rows': part_rows[:WARRANTY_ROW_CAP],
+        'parts_more': max(0, len(part_rows) - WARRANTY_ROW_CAP),
+        'shop_rows': shop_rows[:WARRANTY_ROW_CAP],
+        'any_claims': bool(parts),
     }
 
 

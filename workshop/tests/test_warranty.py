@@ -1055,6 +1055,287 @@ class TheWarrantyCostReachesProfitTests(WarrantyBase):
         self.assertEqual(engine.parts_transport(start, end), D('400'))
         self.assertEqual(after['profit'], before['profit'] - D('2900'))
 
+    def month(self):
+        start = self.today.replace(day=1)
+        return start, engine._month_end(start)
+
+    def test_the_warranty_figure_is_a_slice_of_expenses_never_a_second_charge(self):
+        """"Includes warranty claims" (2026-10-09) must add up the claims'
+        parts on BOTH routes, with their transport, and must already be inside
+        Total Expenses — the total moves once, by exactly that figure."""
+        sold = self.sold(when=self.today - timedelta(days=400))
+        item = Item.objects.create(
+            category=Category.objects.create(name='Battery'), name='Amaron 65Ah',
+            average_stock=D('4'), current_stock=D('5'), avg_cost=D('5000'))
+        stock = JobCardSpareItem.objects.create(
+            job_card=sold, source=JobCardSpareItem.SOURCE_INVENTORY,
+            item=item, quantity=D('1'), total_price=D('7000'))
+        start, end = self.month()
+        before = engine.build_profit_report(start, end)
+        self.assertEqual(before['warranty_cost'], D('0'))
+
+        shop_claim = self.open_for(sold)
+        self.answer(shop_claim, D('2500'), transport_cost=D('400'))
+        shop_claim.mark_completed()
+        self.claim(stock)                          # off the shelf at ₹5,000
+
+        after = engine.build_profit_report(start, end)
+        self.assertEqual(after['warranty_cost'], D('7900'))
+        self.assertEqual(after['expense_total'], before['expense_total'] + D('7900'))
+        self.assertEqual(after['profit'], before['profit'] - D('7900'))
+
+    def test_ordinary_job_cards_are_not_counted_as_warranty(self):
+        self.sold(when=self.today)                 # a ₹6,000 shop part, billed
+        start, end = self.month()
+        report = engine.build_profit_report(start, end)
+        self.assertEqual(report['expense_total'], D('6000'))
+        self.assertEqual(report['warranty_cost'], D('0'))
+
+    def test_the_profit_page_says_includes_and_only_when_there_is_some(self):
+        owner = User.objects.create_user(username='wr_owner', password='pw')
+        owner.groups.add(Group.objects.get(name='Owner'))
+        url = reverse('analysis_dashboard')
+        sold = self.sold(when=self.today - timedelta(days=400))
+
+        html = self.client_for(owner).get(url).content.decode()
+        self.assertNotIn('Includes warranty claims', html)
+
+        self.answer(self.open_for(sold), D('2500'), transport_cost=D('400'))
+        html = self.client_for(owner).get(url).content.decode()
+        line = html.split('<div class="pf-included">', 1)[1].split('</div>', 1)[0]
+        self.assertIn('Includes warranty claims', line)
+        self.assertIn('₹2,900', line)
+        # It sits AFTER Total Expenses — under the figure it is a slice of.
+        self.assertLess(html.index('Total Expenses'), html.index('<div class="pf-included">'))
+
+
+# =============================================================================
+# THE LIVE REPORT → WARRANTY NOT FILLED (2026-10-09)
+# =============================================================================
+class TheLiveReportShowsWarrantyNotFilledTests(WarrantyBase):
+    """
+    "Billed but not filled"'s twin for warranty cards: a COMPLETED warranty
+    card with an empty box — mileage, mechanic, a concern not fixed, the
+    part's shop, dates or Shop Price — by `settlement.unfilled`, which asks a
+    warranty card for no labour charge. A warranty part still travelling is in
+    "On the way" — even after the car has left — and is left out of the gaps.
+    Second on the page; absent when none.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.wr = self.open_for(self.sold())          # no mileage, no mechanic, part ORDERED
+
+    def report(self):
+        return self.client_for(self.office).get(reverse('live_report'))
+
+    def listed(self, res=None):
+        return [j.pk for j in (res or self.report()).context['warranty_unfilled']]
+
+    def fill(self):
+        """Everything a finished warranty card should carry."""
+        JobCard.objects.filter(pk=self.wr.pk).update(mileage='52000', lead_mechanic=self.mech)
+        JobCardSpareItem.objects.filter(pk=self.claimed(self.wr).pk).update(
+            status='RECEIVED', received_date=self.today, unit_price=D('0'))
+        self.wr.refresh_from_db()        # or mark_completed() saves the old copy back
+
+    def receive(self):
+        JobCardSpareItem.objects.filter(pk=self.claimed(self.wr).pk).update(
+            status='RECEIVED', received_date=self.today, expected_days=None)
+
+    def test_a_card_still_in_the_workshop_is_not_listed(self):
+        res = self.report()
+        self.assertEqual(self.listed(res), [])
+        self.assertIn(self.claimed(self.wr).pk, [s.pk for s in res.context['ordered_spares']])
+        self.assertNotIn('</i> Warranty not filled', res.content.decode())
+
+    def test_a_completed_card_names_every_empty_box(self):
+        self.receive()
+        self.wr.mark_completed()
+        job, = self.report().context['warranty_unfilled']
+        self.assertEqual(job.unfilled.card_missing, 'no mileage, no mechanic')
+        part, = job.unfilled.spares
+        self.assertEqual(part.missing, 'no shop price')
+        self.assertEqual(job.unfilled.count, 3)
+
+    def test_a_part_on_its_way_stays_in_on_the_way_after_the_car_leaves(self):
+        """The owners' WR-26-006: the car went home while the part was on
+        order. It stays in "On the way", countdown and all, and is not also a
+        gap — one part, one place."""
+        JobCardSpareItem.objects.filter(pk=self.claimed(self.wr).pk).update(
+            ordered_date=self.today - timedelta(days=2), expected_days=20)
+        self.wr.mark_completed()
+        res = self.report()
+        on_way = {s.pk: s for s in res.context['ordered_spares']}
+        part = on_way[self.claimed(self.wr).pk]
+        self.assertEqual((part.wait_age, part.wait_due), ('2d', '18 left'))
+        job, = res.context['warranty_unfilled']          # only for its own boxes
+        self.assertEqual(job.unfilled.spares, ())
+        self.assertEqual(job.unfilled.card_missing, 'no mileage, no mechanic')
+
+    def test_a_job_cards_parts_still_stop_at_complete(self):
+        job = self.sold(plate='KL 9 Z 9', completed=False)
+        JobCardSpareItem.objects.filter(job_card=job).update(
+            status='ORDERED', ordered_date=self.today, received_date=None)
+        job.mark_completed()
+        ids = [s.pk for s in self.report().context['ordered_spares']]
+        self.assertNotIn(job.spares.get().pk, ids)
+
+    def test_a_concern_not_fixed_is_a_gap_and_no_labour_is_ever_asked(self):
+        JobCardConcern.objects.create(job_card=self.wr, concern_text='Not cranking')
+        JobCardLabourItem.objects.create(job_card=self.wr, job_description='Starter refitted')
+        self.fill()
+        self.wr.mark_completed()
+        job, = self.report().context['warranty_unfilled']
+        self.assertEqual([c.text for c in job.unfilled.concerns], ['Not cranking'])
+        self.assertEqual(job.unfilled.card, ())         # free work: no labour charge
+
+    def test_a_filled_card_leaves_and_the_box_goes(self):
+        self.fill()
+        self.wr.mark_completed()
+        res = self.report()
+        self.assertEqual(self.listed(res), [])
+        self.assertNotIn('</i> Warranty not filled', res.content.decode())
+
+    def test_it_sits_second_and_opens_the_warranty_card(self):
+        self.wr.mark_completed()
+        html = self.report().content.decode()
+        billed = html.index('</i> Billed but not filled')
+        mine = html.index('</i> Warranty not filled')
+        self.assertLess(billed, mine)
+        self.assertLess(mine, html.index('<h6 class="lr-group">Spares</h6>'))
+        self.assertIn(reverse('warranty_card', args=[self.wr.pk]) + '?next=mini', html)
+        self.assertIn('no mileage, no mechanic', html)
+
+    def test_a_job_card_is_still_asked_for_its_labour(self):
+        """The warranty exception is the warranty card's alone."""
+        from workshop.settlement import unfilled
+        job = self.sold(plate='KL 9 Z 9')
+        JobCardLabourItem.objects.create(job_card=job, job_description='Fitting')
+        self.assertIn('no job amount', unfilled(job).card_missing)
+
+
+# =============================================================================
+# DEEP ANALYSIS → WARRANTY (2026-10-09)
+# =============================================================================
+class TheWarrantySectionTests(WarrantyBase):
+    """
+    Which parts come back, whose parts they were, what claims cost. A RATE is
+    always claims against the system's own fittings over every time the system
+    fitted that part — a warranty replacement is a fitting too. An Excel-bill
+    claim is counted beside the rate, never in it. A shop answers for the
+    parts IT sold that failed. Tiles follow the filter; tables count from the
+    start.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.owner = User.objects.create_user(username='wr_owner', password='pw')
+        self.owner.groups.add(Group.objects.get(name='Owner'))
+        start = self.today.replace(day=1)
+        self.window = (start, engine._month_end(start))
+
+    def section(self):
+        from workshop.analysis_views import _insight_warranty
+        return _insight_warranty(*self.window)
+
+    def html(self):
+        return self.client_for(self.owner).get(
+            reverse('analysis_insight_section', args=['warranty'])).content.decode()
+
+    def three_starters_two_back(self):
+        """Three cars fitted a Spare club Starter Motor; two came back."""
+        a = self.sold(plate='KL 1 A 1')
+        b = self.sold(plate='KL 1 A 2')
+        self.sold(plate='KL 1 A 3')
+        return self.open_for(a, plate='KL 1 A 1'), self.open_for(b, plate='KL 1 A 2')
+
+    def test_a_part_reads_as_claims_over_fittings_with_the_cars_it_failed_on(self):
+        self.three_starters_two_back()
+        row, = self.section()['part_rows']
+        self.assertEqual(row['name'], 'Starter Motor')
+        # 3 fitted on bills + the 2 replacements = 5 fittings; 2 came back.
+        self.assertEqual((row['back']['claims'], row['back']['fitted']), (2, 5))
+        self.assertEqual(row['back']['pct_label'], '40%')
+        self.assertEqual(row['cars'], [{'label': 'Audi A4', 'n': 2}])
+
+    def test_one_car_claiming_twice_is_two_claims_on_one_car(self):
+        first = self.open_for(self.sold(plate='KL 1 A 1'), plate='KL 1 A 1')
+        first.mark_completed()
+        self.open_for(first, plate='KL 1 A 1')            # the 2nd claim
+        row, = self.section()['part_rows']
+        self.assertEqual(row['back']['claims'], 2)
+        self.assertEqual(row['cars'], [{'label': 'Audi A4', 'n': 1}])
+
+    def test_a_shop_answers_for_the_part_it_sold_not_for_the_replacement(self):
+        one, two = self.three_starters_two_back()
+        other = SpareShop.objects.create(name='Other shop')
+        self.answer(one, D('0'))                           # Spare club: free
+        self.answer(two, D('3000'), shop=other)            # bought elsewhere
+        shops = self.section()['shop_rows']
+        self.assertEqual([s['name'] for s in shops], ['Spare club'])
+        club, = shops
+        self.assertEqual((club['back']['claims'], club['answered'], club['free']), (2, 2, 1))
+
+    def test_an_excel_bill_claim_is_counted_beside_the_rate_never_in_it(self):
+        old = OldBill.objects.create(
+            bill_number='JB-25-090', bill_date=date(2025, 6, 1),
+            registration_number='KL 5 X 5', brand_name='Audi', model_name='A4')
+        line = OldBillPartLine.objects.create(old_bill=old, name='Starter Motor')
+        self.claim(line, plate='KL 5 X 5')
+        row, = self.section()['part_rows']
+        self.assertEqual((row['back']['claims'], row['excel']), (0, 1))
+        html = self.html()
+        self.assertIn('1 on an Excel bill', html)
+        self.assertNotIn('of 1</span> fitted', html)
+
+    def test_a_stock_part_is_grouped_by_its_product(self):
+        sold = self.sold(plate='KL 1 A 1')
+        item = Item.objects.create(
+            category=Category.objects.create(name='Battery'), name='Amaron 65Ah',
+            average_stock=D('4'), current_stock=D('5'), avg_cost=D('5000'))
+        stock = JobCardSpareItem.objects.create(
+            job_card=sold, source=JobCardSpareItem.SOURCE_INVENTORY,
+            item=item, quantity=D('1'), total_price=D('7000'))
+        self.claim(stock, plate='KL 1 A 1')
+        row, = self.section()['part_rows']
+        self.assertEqual(row['name'], 'Amaron 65Ah')
+        self.assertEqual((row['back']['claims'], row['back']['fitted']), (1, 2))
+        self.assertEqual(self.section()['shop_rows'], [])
+
+    def test_the_tiles_follow_the_window_and_the_tables_count_from_the_start(self):
+        one, two = self.three_starters_two_back()
+        self.answer(two, D('2500'), transport_cost=D('400'))
+        JobCard.objects.filter(pk=one.pk).update(
+            admitted_date=self.today - timedelta(days=400))
+        out = self.section()
+        self.assertEqual(out['tiles']['claims'], 1)
+        self.assertEqual(out['tiles']['cost'], engine.warranty_cost(*self.window))
+        self.assertEqual(out['tiles']['cost'], D('2900'))
+        self.assertEqual((out['tiles']['answered'], out['tiles']['waiting']), (1, 0))
+        self.assertEqual(out['part_rows'][0]['back']['claims'], 2)
+
+    def test_the_page_says_the_counts_beside_the_rate(self):
+        self.three_starters_two_back()
+        html = self.html()
+        self.assertIn('2 of 5</span> fitted · 40%', html)
+        self.assertIn('Audi A4 ×2', html)
+        self.assertIn('since the start', html)
+
+    def test_no_claims_says_so(self):
+        self.assertIn('No warranty claims yet.', self.html())
+
+    def test_it_costs_the_same_queries_for_one_claim_or_many(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        self.open_for(self.sold(plate='KL 1 A 1'), plate='KL 1 A 1')
+        with CaptureQueriesContext(connection) as one:
+            self.section()
+        self.three_starters_two_back()
+        with CaptureQueriesContext(connection) as many:
+            self.section()
+        self.assertEqual(len(one), len(many))
+
 
 # =============================================================================
 # THE WARRANTY CARD — ITS OWN PAGE (2026-10-05)
@@ -1139,7 +1420,7 @@ class TheWarrantyCardPageTests(WarrantyBase):
 
     def test_the_shops_answer_reads_back(self):
         box = self.page(self.office).split('name="spares-0-unit_price"', 1)[1].split('>', 1)[0]
-        self.assertIn('placeholder="Waiting"', box)
+        self.assertIn('placeholder="0 if free"', box)
         self.assertNotIn('value=', box)
         self.answer(self.wr, D('0'))
         self.assertIn('name="spares-0-unit_price" value="0"', self.page(self.office))
@@ -1346,8 +1627,33 @@ class TheWarrantyIsShownWhereverTheCarIsTests(WarrantyBase):
         self.assertIn(f'<a href="{earlier}?back=', html)
         self.assertNotIn('class="dv-pay', html)       # no payment state at all
         self.assertNotIn('class="dv-money-col"', html)  # no customer price per part
-        self.assertIn('₹1,000', html)                 # its cost line stays
+        self.assertIn('<div class="dv-wr-ans">₹1,000</div>', html)   # the shop's charge
         self.assertNotIn('>Settled<', html)           # never settled, so no column
+
+    def test_a_warranty_card_draws_its_claimed_part_and_no_empty_boxes(self):
+        """One "Claimed Part" section; concerns and jobs only when it has some
+        (2026-10-09). A job card keeps all four, always drawn."""
+        detail = lambda pk: self.get(self.office, 'jobcard_detail', pk).content.decode()
+        html = detail(self.wr.pk)
+        self.assertEqual(html.count('class="dv-sec-title"'), 1)
+        self.assertIn('</i> Claimed Part', html)
+        JobCardConcern.objects.create(job_card=self.wr, concern_text='Not cranking')
+        html = detail(self.wr.pk)
+        self.assertEqual(html.count('class="dv-sec-title"'), 2)
+        self.assertIn('Not cranking', html)
+        self.assertEqual(detail(self.sold_card.pk).count('class="dv-sec-title"'), 4)
+
+    def test_the_part_says_the_shops_answer_and_the_card_its_cost(self):
+        detail = lambda: self.get(self.office, 'jobcard_detail', self.wr.pk).content.decode()
+        html = detail()
+        self.assertIn('class="dv-wr-ans dv-wr-ans--wait">Waiting</div>', html)
+        self.assertNotIn('Cost to us', html)                       # nothing spent yet
+        self.answer(self.wr, D('0'), transport_cost=D('50'))
+        html = detail()
+        self.assertIn('class="dv-wr-ans dv-wr-ans--free">Free part</div>', html)
+        self.assertIn('<div class="dv-cost-col">+ ₹50 transport</div>', html)
+        self.assertNotIn('— +', html)
+        self.assertIn('Cost to us ₹50', html)
 
     def test_the_earlier_bill_page_links_its_warranty_cards(self):
         html = self.get(self.office, 'jobcard_detail', self.sold_card.pk).content.decode()
@@ -1501,6 +1807,23 @@ class TheWarrantyPageTests(WarrantyBase):
                          [self.wr.pk, older.pk])                     # newest first
         self.assertEqual(self.page(filter='nonsense').context['filter_type'], 'this_year')
 
+    def test_last_year_lists_only_last_years_cards(self):
+        older = self.last_year('KL 01 B 2')
+        res = self.page(filter='last_year')
+        self.assertEqual([c.pk for c in res.context['cards']], [older.pk])
+        self.assertIn('Last Year', res.context['filter_label'])
+
+    def test_the_period_is_the_apps_own_date_filter_dropdown(self):
+        """Completed's funnel button and menu, with only the three windows a
+        warranty needs — and each item still a plain link without the script."""
+        html = self.page().content.decode()
+        self.assertIn('class="wl-filter-btn"', html)
+        menu = html.split('wl-filter-menu', 1)[1].split('</ul>', 1)[0]
+        self.assertEqual([k for k in ('this_year', 'last_year', 'all') if f'data-filter="{k}"' in menu],
+                         ['this_year', 'last_year', 'all'])
+        self.assertIn('href="?filter=last_year"', menu)
+        self.assertNotIn('wl-pill', html)
+
     def test_the_earlier_bills_number_finds_its_warranty_card(self):
         other = self.open_for(self.sold(plate='KL 01 B 2'), plate='KL 01 B 2')
         res = self.page(q=other.warranty_for)
@@ -1511,7 +1834,49 @@ class TheWarrantyPageTests(WarrantyBase):
         self.assertIn('class="wl-chip wl-chip-wait">Waiting</span>', html)
         self.answer(self.wr, D('0'))
         html = self.page().content.decode()
-        self.assertIn('class="wl-chip wl-chip-free">Free</span>', html)
+        self.assertIn('class="wl-chip wl-chip-free">Free part</span>', html)
+
+    def test_a_free_part_with_transport_paid_says_both(self):
+        """The chip is the SHOP'S ANSWER, the amount is what it cost US — so a
+        part the shop gave free, with ₹55 of transport, reads "₹55 · Free
+        part", exactly as Deep Analysis counts it (2026-10-09)."""
+        self.answer(self.wr, D('0'), transport_cost=D('55'))
+        side = self.page().content.decode().split('<span class="wl-side">', 1)[1].split('</a>', 1)[0]
+        self.assertIn('<span class="wl-cost">₹55</span>', side)
+        self.assertIn('Free part', side)
+        from workshop.analysis_views import _insight_warranty
+        start = self.today.replace(day=1)
+        tiles = _insight_warranty(start, engine._month_end(start))['tiles']
+        self.assertEqual((tiles['free'], tiles['answered']), (1, 1))
+
+    def test_a_row_is_three_lines_part_then_car_then_card(self):
+        """The part leads, then which car, then the card's own numbers — each
+        on its own line (2026-10-09), so a phone never wraps them together."""
+        row = self.page().content.decode().split('<div class="wl-list">')[-1].split('</a>', 1)[0]
+        main = row.split('<span class="wl-main">', 1)[1]
+        part = main.index('<b class="wl-part">Starter Motor</b>')
+        car = main.index('<span class="wl-dots wl-car"><span>Audi A4</span><span>KL 10 AA 1000</span></span>')
+        meta = main.index(f'<span class="wl-dots wl-meta"><span class="wl-no">{self.wr.bill_number}</span>')
+        self.assertLess(part, car)
+        self.assertLess(car, meta)
+        self.assertIn(f'<span>for {self.wr.warranty_for}</span>', main)
+
+    def test_a_charged_part_has_no_free_chip(self):
+        self.answer(self.wr, D('1000'))
+        self.assertNotIn('Free part', self.page().content.decode())
+
+    def test_a_stock_part_is_never_free_from_a_shop(self):
+        """Our own shelf, even at an unknown (₹0) cost, is not a shop
+        replacing free."""
+        other = self.sold(plate='KL 01 B 2')
+        item = Item.objects.create(
+            category=Category.objects.create(name='Battery'), name='Amaron 65Ah',
+            average_stock=D('4'), current_stock=D('5'), avg_cost=D('0'))
+        stock = JobCardSpareItem.objects.create(
+            job_card=other, source=JobCardSpareItem.SOURCE_INVENTORY,
+            item=item, quantity=D('1'), total_price=D('7000'))
+        card = self.claim(stock, plate='KL 01 B 2')
+        self.assertEqual(warranty.free_from_shop([card.pk]), set())
 
     def test_each_card_names_its_part_and_the_search_finds_it(self):
         other = self.sold(plate='KL 01 B 2')

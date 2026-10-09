@@ -420,6 +420,9 @@ the four values removed — see the view.
     /* A warranty card earns nothing, so its headline is the fact rather than
        a green ₹0 — in the app's one warranty colour (`--wr-*`, style.css). */
     .dv-bill-wr { color: var(--wr-ink); }
+    /* What the claim cost US, beside it — slate, never red or green: it is a
+       fact about our side, not money in or a debt. */
+    .dv-wr-cost { font-size: 0.95rem; font-weight: 700; color: #475569; }
     .dv-got  { font-size: 0.95rem; font-weight: 700; color: #16a34a; }
     .dv-owed { font-size: 0.95rem; font-weight: 700; color: #dc2626; }
     .dv-off  { font-size: 0.95rem; font-weight: 600; color: #94a3b8; }
@@ -671,6 +674,31 @@ the four values removed — see the view.
         font-variant-numeric: tabular-nums;
     }
 
+    /* A warranty part's SHOP ANSWER, where a price would sit: the Warranty
+       list's two chips in its own colours, or what the shop charged in dark
+       type — money OUT, so never the price column's green. */
+    .dv-wr-ans {
+        grid-row: 1 / 2;
+        grid-column: 2 / 3;
+        justify-self: end;
+        font-size: 0.9rem;
+        font-weight: 700;
+        color: #334155;
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+    }
+    .dv-wr-ans--wait, .dv-wr-ans--free {
+        padding: 1px 8px;
+        border-radius: 999px;
+        font-size: 0.66rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+    .dv-wr-ans--wait { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+    .dv-wr-ans--free { background: var(--wr-tint); color: var(--wr-ink); border: 1px solid var(--wr-line); }
+    .dv-wr-ico { color: var(--wr-ink); }
+
     .dv-empty {
         padding: 0.55rem 0.85rem;
         color: #cbd5e1;
@@ -901,8 +929,10 @@ parent is not fixed, so the label is plain "Back" and the view resolves
         {% if jobcard.notes %}<p class="dv-line3">{{ jobcard.notes }}</p>{% endif %}
 
         {% if jobcard.is_warranty %}
+        {% comment %} What the customer pays, then what the claim cost US — its part and transport, the Warranty list's own figure (2026-10-09). Only when there is some. {% endcomment %}
         <div class="dv-money">
             <span class="dv-bill dv-bill-wr">No charge</span>
+            {% if wr_cost %}<span class="dv-wr-cost">Cost to us ₹{{ wr_cost|floatformat:0|intcomma }}</span>{% endif %}
         </div>
         {% else %}
         <div class="dv-money">
@@ -960,7 +990,16 @@ parent is not fixed, so the label is plain "Back" and the view resolves
 
 <div class="dv-secs">
 
+    {% comment %}
+    A WARRANTY CARD (2026-10-09): its concerns and its jobs are drawn only when
+    it has some, and its ONE part is one "Claimed Part" section whichever shelf
+    it came off — the warranty card form's own word. A claim usually carries
+    the part and nothing else, so the job card's fixed four would be three
+    empty boxes and a fourth that is always empty (one part is one route).
+    A job card keeps all four, always drawn.
+    {% endcomment %}
     <!-- 1. Customer Concerns -->
+    {% if not jobcard.is_warranty or jobcard.concerns.all %}
     <div class="dv-sec">
         <div class="dv-sec-title">
             <i class="bi bi-exclamation-circle text-primary"></i> Customer Concerns
@@ -979,6 +1018,7 @@ parent is not fixed, so the label is plain "Back" and the view resolves
         <div class="dv-empty">—</div>
         {% endfor %}
     </div>
+    {% endif %}
 
     <!-- 2. Job Performed -->
     {% comment %}
@@ -986,6 +1026,7 @@ parent is not fixed, so the label is plain "Back" and the view resolves
     whole here — so these rows carry no figure at all and the charge is on the
     money line at the foot. That is also how the printed invoice sets it out.
     {% endcomment %}
+    {% if not jobcard.is_warranty or jobcard.labours.all %}
     <div class="dv-sec">
         <div class="dv-sec-title">
             <i class="bi bi-tools text-primary"></i> Job Performed
@@ -1003,6 +1044,43 @@ parent is not fixed, so the label is plain "Back" and the view resolves
         <div class="dv-empty">—</div>
         {% endfor %}
     </div>
+    {% endif %}
+
+    {% if jobcard.is_warranty %}
+    <!-- 3. Claimed Part (a warranty card) -->
+    {% comment %}
+    The shop's ANSWER sits where a price would (`_describe_claimed`): Waiting
+    while the Shop Price is blank, Free part at ₹0, otherwise what the shop
+    charged — the Warranty list's chips, in its colours. A stock part says what
+    the shelf cost. Transport stands alone on the line under it.
+    {% endcomment %}
+    <div class="dv-sec">
+        <div class="dv-sec-title">
+            <i class="bi bi-shield-check dv-wr-ico"></i> Claimed Part
+        </div>
+        {% for spare in claimed_parts %}
+        <div class="dv-row">
+            <div class="dv-row-main">
+                {% if spare.source == 'INVENTORY' or spare.status == 'RECEIVED' %}<i class="bi bi-check-circle-fill dv-ico-done"></i>
+                {% elif spare.status == 'ORDERED' %}<i class="bi bi-clock-history dv-ico-going"></i>
+                {% else %}<span class="dv-ico-pending"></span>{% endif %}
+                <span>{{ spare.spare_part_name }}</span>
+            </div>
+            {% if spare.wr_answer == 'wait' %}<div class="dv-wr-ans dv-wr-ans--wait">Waiting</div>
+            {% elif spare.wr_answer == 'free' %}<div class="dv-wr-ans dv-wr-ans--free">Free part</div>
+            {% elif spare.wr_amount %}<div class="dv-wr-ans">{{ spare.wr_amount }}</div>{% endif %}
+            {% if spare.meta_line %}
+            <div class="dv-row-meta">{{ spare.meta_line }}</div>
+            {% endif %}
+            {% if spare.cost_str %}
+            <div class="dv-cost-col">{{ spare.cost_str }}</div>
+            {% endif %}
+        </div>
+        {% empty %}
+        <div class="dv-empty">—</div>
+        {% endfor %}
+    </div>
+    {% else %}
 
     <!-- 3. Inventory Items -->
     {% comment %}
@@ -1077,6 +1155,7 @@ parent is not fixed, so the label is plain "Back" and the view resolves
         <div class="dv-empty">—</div>
         {% endfor %}
     </div>
+    {% endif %}
 
 </div>
 

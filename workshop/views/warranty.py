@@ -43,10 +43,11 @@ from .jobcard import (
 )
 
 
-#: The two windows the Warranty page offers — the Estimates list's own pair.
-#: A warranty is opened a handful of times a month, so Today or This Week
-#: would be an empty page most of the time, which reads as a broken screen.
-WARRANTY_FILTERS = (('this_year', 'This Year'), ('all', 'All Time'))
+#: The windows the Warranty page offers, in the app's own date-filter dropdown
+#: (2026-10-09, the owners' call). A warranty is opened a handful of times a
+#: month, so Today, This Week or This Month would be an empty page most of the
+#: time, which reads as a broken screen.
+WARRANTY_FILTERS = (('this_year', 'This Year'), ('last_year', 'Last Year'), ('all', 'All Time'))
 
 
 @office_required
@@ -56,12 +57,12 @@ def warranty_list(request):
 
     Two parts, top to bottom:
 
-    * **Waiting on the shop** — every warranty part whose Shop Price is still
+    * **Waiting for shop price** — every warranty part whose Shop Price is still
       blank, oldest first, NEVER filtered: a claim the shop has not answered
       must not drop out of sight because somebody narrowed the list below.
       Each row opens the card's form, where the answer is typed.
     * **Every warranty card**, newest first, narrowed by a search and by This
-      Year (the default) or All Time. The heading counts them and totals what
+      Year (the default), Last Year or All Time. The heading counts them and totals what
       they cost, over exactly the cards listed.
 
     Office and Owner, like the cards themselves. Plain links and a plain GET
@@ -73,8 +74,11 @@ def warranty_list(request):
         filter_type = 'this_year'
 
     cards = JobCard.objects.filter(live_cards(), kind=JobCard.KIND_WARRANTY)
+    year = timezone.localdate().year
     if filter_type == 'this_year':
-        cards = cards.filter(admitted_date__year=timezone.localdate().year)
+        cards = cards.filter(admitted_date__year=year)
+    elif filter_type == 'last_year':
+        cards = cards.filter(admitted_date__year=year - 1)
     for word in q.split():
         cards = cards.filter(
             Q(bill_number__icontains=word) | Q(warranty_for__icontains=word) |
@@ -94,12 +98,14 @@ def warranty_list(request):
     rows = list(page_obj.object_list)
     costs = warranty.cost_by_card(r.pk for r in rows)
     names = warranty.claimed_names(r.pk for r in rows)
+    free = warranty.free_from_shop(r.pk for r in rows)
     waiting = warranty.waiting_on_shop()
     waiting_cards = {spare.job_card_id for spare in waiting}
     for row in rows:
         row.cost = costs.get(row.pk)
         row.claimed_name = names.get(row.pk, '')
         row.waiting = row.pk in waiting_cards
+        row.free = row.pk in free
     for spare in waiting:
         spare.age = warranty.age_phrase(spare.job_card.admitted_date)
 

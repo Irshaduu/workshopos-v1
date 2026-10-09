@@ -3844,10 +3844,10 @@ reachable from exactly one screen**. A shop paid *ahead* archives normally; a
 credit is not a debt.
 → `ArchivingAShopCannotHideWhatIsOwedTests`
 
-## Deep Analysis — the eight insight sections
+## Deep Analysis — the nine insight sections
 
-Mechanics · Spare Parts · Inventory · Vehicles · Fleet · Shops · Cashbook ·
-Operations. Lazy-loaded one at a time; `INSIGHT_SECTIONS` in `analysis_views.py`
+Mechanics · Spare Parts · Inventory · Vehicles · Fleet · Shops · Warranty ·
+Cashbook · Operations (Warranty is described under "Warranty"). Lazy-loaded one at a time; `INSIGHT_SECTIONS` in `analysis_views.py`
 is the one list that defines them, and the Profit page's Deep Analysis link
 builds its subtitle from it rather than naming them a second time.
 
@@ -5992,7 +5992,8 @@ treats any quiet shop, not something this added.
 **A customer comes back with a part that failed; a WARRANTY CLAIM opens a
 WARRANTY CARD for it** (built 2026-10-02 → 10-08 on the owners' design). Every
 rule is `workshop/warranty.py`. The screens: `/warranty/` (drawer → Warranty,
-Office and Owner) — **Waiting on the shop**, then every warranty card; New claim's
+Office and Owner) — **Waiting for shop price**, then every warranty card (This Year,
+Last Year or All Time, in Completed's own funnel dropdown, values copied); New claim's
 car list; **the car's warranty page** `/warranty/new/<reg>/`, which the Car
 Profile's **Warranty** button opens directly; and the card, `/warranty/<pk>/`.
 
@@ -6024,6 +6025,44 @@ A ₹0 card that is never settled would dilute every average and sit "unsettled"
 for ever. **Its COST still reaches profit** — through its parts, read by route
 and date (`_live_spares`), never through this. `card.is_bill` is the same rule
 for a card in hand.
+
+**The Profit page names what claims cost — "Includes warranty claims ₹X" under
+Total Expenses** (2026-10-09, the owners' ask). `analysis_engine.warranty_cost()`
+adds the claims' parts up again over the SAME `_live_spares` window — `SPARE_COST`
+on both routes, transport on shop rows, the streams' own rule — so it is always a
+slice of the total printed above it. ⚠ **It never joins `expense_total`**: a
+"Warranty" expense line would charge every claim twice. Grey, no row border, the
+word "Includes", only when there is some. A part still waiting for its shop price counts
+₹0 here as in the streams.
+→ `TheWarrantyCostReachesProfitTests`
+
+**Deep Analysis → Warranty answers three questions and nothing more** — which
+parts come back, whose parts they were, what claims cost (2026-10-09, the
+owners' ask). `_insight_warranty` in `analysis_views.py`. A warranty card's one
+part is a copy of the failed part (name, product, shop), so the claims are the
+parts on warranty cards, grouped like Spare Parts (lowered name) and Inventory
+(product). Rules that keep it from misleading:
+
+- **The tiles follow the date filter, by claim date; the tables count from the
+  start**, whatever the filter — at ~30 cars a month a month is too few parts to
+  judge, and the note at the foot says so. Cost to us is `warranty_cost()`, the
+  Profit page's figure.
+- ⚠ **A RATE IS NEVER PRINTED WITHOUT ITS COUNTS** — "2 of 11 fitted · 18%",
+  and "under 1%" rather than "0%" beside "1 of 300". "Fitted" is every time the
+  system fitted that part, on any live card: a warranty replacement is a fitting
+  too, and it is what a 2nd claim fails.
+- ⚠ **An Excel-bill claim is counted BESIDE the rate, never in it** ("+1 on an
+  Excel bill") — nobody knows how many were fitted in the Excel years.
+- ⚠ **A shop answers for the parts IT sold that failed** (`replaces__shop`),
+  never for the replacement. "Replaced free" counts that shop's own ₹0 answers;
+  a replacement bought elsewhere is not the shop honouring its warranty.
+- **Parts sort by how often they come back, shops by rate** — part fitting
+  counts differ wildly, so a rate-first order would lead with a part fitted once
+  that failed once; every shop sells dozens, so there a count would only blame
+  the shop bought from most.
+- **No red anywhere**, and no per-mechanic rate (a claim is usually the part,
+  not the work).
+→ `TheWarrantySectionTests`
 
 ⚠ **ONE CLAIM IS ONE PART** (the owners, 2026-10-07). The car's warranty page
 lists every FINISHED bill, newest first — job cards, earlier warranty cards and
@@ -6113,12 +6152,20 @@ the warranty card.
 while the shop has not answered, **₹0** when it replaced the part free, an amount
 when the workshop paid (the shop charged, or the replacement was bought
 elsewhere). Nothing new is stored, so the shop ledger and the Profit page read
-the column they always did, and **Waiting on the shop** is exactly a shop part on
+the column they always did — the blank box reads **"0 if free"** (it read
+"Waiting", a state, until 2026-10-09; it now says what to type) — and **Waiting for shop price** is exactly a shop part on
 a warranty card with no Shop Price — open or finished, oldest first, never
 filtered, because a shop often answers after the car has gone. ⚠ **A ₹0 must
 survive a save**: the job card's `_tidy_money_initial` shows a stored zero as
 blank, which here would turn "free" back into "waiting" on the next save, so the
 claimed part uses `_tidy_claim_money`, which keeps it.
+
+⚠ **THE LIST'S CHIP IS THE SHOP'S ANSWER; ITS AMOUNT IS WHAT IT COST US** — two
+facts, one each (2026-10-09). "Free part" means the Shop Price is ₹0
+(`warranty.free_from_shop`), even with transport paid, so a free part with ₹55 of
+transport reads "₹55 · Free part". It said Free only when the whole cost was ₹0,
+which disagreed with Deep Analysis's "Replaced free". A stock part never gets the
+chip — our own shelf is not a shop replacing free, even at an unknown cost.
 
 **Two rare cases, one quiet control each.** The replacement came from **another
 shop**: change the row's shop, and it then says "First fitted from <shop>". It
@@ -6174,7 +6221,14 @@ number, and "on the floor" is COUNTED, because a finished newest card no longer
 means the car has left. The service history counts a warranty visit (its parts
 join PART LIFE — a refit is a fitting) and prints WARRANTY · NO CHARGE where a
 bill prints its amount. The read-only card drops the Settled column — "never",
-not "not yet". One colour wherever a warranty is named, **teal** (`--wr-*` and
+not "not yet" — and since 2026-10-09 its sections too: ONE "Claimed Part"
+section whichever shelf the part came off, concerns and jobs only when there
+are some (a job card keeps all four, always drawn), the part's SHOP ANSWER
+where a price would sit (Waiting / Free part / the charge; a stock part its
+shelf cost, `_describe_claimed`), transport alone under it, and "Cost to us ₹X"
+beside "No charge". The Warranty list's rows are three placed lines — the
+part, the car, the card's numbers — with the cost and the shop's answer on the
+right. One colour wherever a warranty is named, **teal** (`--wr-*` and
 `.wr-badge` in style.css), because green and red are money, blue a button and
 amber "changed".
 
@@ -6203,6 +6257,9 @@ are about to skip this" by the settle dialog, "you skipped this" by the Live
 Report's *Billed but not filled* container. A second copy would drift exactly
 where it matters: a card the dialog waved through turning up on the chase list, or
 the reverse. `unfilled(jobcard)` returns the grouped structure both surfaces draw.
+Since 2026-10-09 it has a third reader, the Live Report's *Warranty not filled*,
+and one exception for it: a warranty card is never asked for a labour charge
+(see "Warranty").
 
 Settling is the last thing that happens to a job card and the only irreversible
 one: the moment a figure is typed the card is PAID, the shortfall becomes a
@@ -9603,7 +9660,41 @@ row.
 **Only a SHOP part is ever chased.** A warehouse draw came off the shelf already
 fitted, so its `status` column means nothing; listing one as waiting would send
 somebody after a part that is already on the car. Rows on a completed or deleted card
-are out too, as are spares with no job card — every row here opens a job card.
+are out too — ⚠ except a WARRANTY card's, which stay until the part arrives
+(see "Warranty not filled" below) — as are spares with no job card; every row
+here opens a job card.
+
+**"WARRANTY NOT FILLED" — TEAL, SECOND ON THE PAGE, "BILLED BUT NOT FILLED"'S
+TWIN** (2026-10-09, the owners' call). COMPLETED warranty cards that still
+have an empty box: the mileage, the mechanic, a concern not marked fixed, the
+part's shop, its dates, its Shop Price — so nothing on a claim is missed.
+
+- **Tracking starts at Complete.** That is a warranty card's "done" moment, the
+  way settling is a bill's.
+- ⚠ **A WARRANTY PART STILL TRAVELLING STAYS IN "ON THE WAY" AFTER THE CAR HAS
+  LEFT** (found from the owners' own WR-26-006): with a warranty the car often
+  goes home while the replacement is on order and comes back when it lands, so
+  the card is completed with its part in transit. The three parts boxes take a
+  warranty card's parts whether or not it is completed (a job card's still stop
+  at completion), countdown included, and `live_report` passes those parts to
+  `settlement.unfilled` as `skip` — a part on its way is not unfilled, and one
+  part is in one place on the page. No question on the Complete button — the
+  owners removed that one, and the card stays editable.
+- ⚠ **ONE CHECKER, ONE ROW SHAPE.** `settlement.unfilled` decides for both boxes
+  — it asks a warranty card for NO labour charge (free work), and a warranty
+  part's customer price is ₹0 by the server's rule, so that is the whole
+  exception. The gap rows are one include (`includes/_unfilled_gaps.html`), so
+  "not filled" means one thing on this page. `_warranty_unfilled()` narrows in
+  the database the way `_billed_but_unfilled()` does, minus the labour clause.
+- **It replaced a "Waiting for shop price" box** that lived here for an hour: a
+  blank Shop Price on a finished card is now one of these gaps. The Warranty
+  page keeps its own "Waiting for shop price" list, across every card — the
+  warranty desk's chase list, a different question on a different screen.
+- Teal frame, the warranty colour; the gaps inside read red like the box
+  above, because missing is missing. Count in GAPS. Newest completed first, not
+  paged (claims are a handful). ⚠ **Absent when every finished warranty card
+  is filled in.** A row opens the warranty card (`?next=mini`).
+→ `TheLiveReportShowsWarrantyNotFilledTests`
 
 **"RECEIVED (LAST 5 DAYS)" IS THE ONE BOX ON THE PAGE THAT IS NOT A LIST
 OF WORK.** Shop parts received in the last `RECEIVED_WINDOW_DAYS`, green,
@@ -10991,7 +11082,7 @@ python manage.py runserver
 ```
 
 ```bash
-# Full test suite — 91 files, 3,157 tests (counted 2026-10-09). Always SQLite (see below).
+# Full test suite — 91 files, 3,185 tests (counted 2026-10-09). Always SQLite (see below).
 # ⚠ IT RUNS AFTER A **MAJOR** UPDATE, NOT BEFORE EVERY COMMIT (the owner's call,
 # 2026-09-20) — and "major" is decided by BLAST RADIUS, measured, or the word
 # quietly comes to mean "never". FULL suite: any model, migration, form, signal,
@@ -11509,7 +11600,7 @@ table into the general roster at `/manage/?section=staff`. Only
 
 # Testing conventions
 
-Tests live in `workshop/tests/` and `inventory/` — **91 files, 3,157 tests**,
+Tests live in `workshop/tests/` and `inventory/` — **91 files, 3,185 tests**,
 re-counted 2026-10-09. (`workshop/tests/` is 85 `test_*.py` plus `tests.py`;
 `inventory/` is 5, one of which is `tests_suppliers.py` and so is missed by a
 `test_*.py` glob — which is why the two halves used to be written down wrong.)

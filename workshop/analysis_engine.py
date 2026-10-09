@@ -716,6 +716,28 @@ def parts_transport(start, end):
     return _sum(qs, TRANSPORT_COST)
 
 
+def warranty_cost(start, end):
+    """
+    What warranty claims cost the workshop in the window — a SLICE of Total
+    Expenses, never a stream of its own (2026-10-09, the owners' ask).
+
+    A warranty card bills ₹0, so its whole effect on profit is its parts, which
+    the parts streams above already charge: a shop part in Spare Shops (or
+    Other Spare Purchases with no shop yet), a stock part in Inventory Used,
+    the transport in Parts transport. This adds those rows up again over the
+    SAME `_live_spares` window, with the same two expressions and the same
+    route rule for transport, so the figure is always inside the total it is
+    printed under. ⚠ It must never join `expense_total` — that would charge
+    every claim twice.
+
+    A part still waiting for its shop price has no Shop Price and counts ₹0 here, as
+    it does in the streams; `uncosted_shop_count` already says so.
+    """
+    qs = _live_spares(start, end).filter(job_card__kind=JobCard.KIND_WARRANTY)
+    return (_sum(qs, SPARE_COST)
+            + _sum(qs.filter(source=JobCardSpareItem.SOURCE_SHOP), TRANSPORT_COST))
+
+
 def unassigned_spare_purchases():
     """
     Shop purchases not yet fitted to a car — a running total, not a window.
@@ -1446,6 +1468,9 @@ def build_profit_report(start, end, disclosures=True):
         'uncosted_draws': uncosted_draw_count(start, end) if disclosures else 0,
         'uncosted_shop': uncosted_shop_count(start, end) if disclosures else 0,
         'unassigned_spares': unassigned_spare_purchases() if disclosures else {'amount': ZERO, 'count': 0},
+        # Printed under Total Expenses as "Includes …" — already inside
+        # `expense_total`, never added to it.
+        'warranty_cost': warranty_cost(start, end) if disclosures else ZERO,
         'profit': profit,
         'margin': margin,
     }

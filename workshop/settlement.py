@@ -195,12 +195,17 @@ class Unfilled:
         )
 
 
-def unfilled(jobcard):
+def unfilled(jobcard, skip=()):
     """
     Everything unfilled on this card, in the order someone would fix it.
 
     Reads `jobcard.spares`, `jobcard.concerns` and `jobcard.labours` through the
     relation, so the caller should have prefetched all three — both callers do.
+
+    `skip` — part ids another box on the same screen is already tracking. The
+    Live Report's "Warranty not filled" passes the warranty parts still in
+    "On the way" or "Not ordered yet": a part still travelling is not
+    unfilled, it is on its way, and one part is in one place on that page.
     """
     # ---- The card's own header -------------------------------------------
     header = []
@@ -217,7 +222,14 @@ def unfilled(jobcard):
     # `.all()` rather than `.exists()`: the caller prefetches this relation, and
     # exists() ignores the prefetch cache and issues a fresh query per card —
     # which on the chase list is one query per row.
-    if list(jobcard.labours.all()) and (jobcard.labour_amount or ZERO) <= ZERO:
+    #
+    # ⚠ A WARRANTY CARD IS NEVER ASKED FOR ONE (2026-10-09): it charges the
+    # customer nothing, so its labour is ₹0 by the server's rule and a job line
+    # on it is work done free. Its customer prices are ₹0 by the same rule, so
+    # they never come up empty either — the Live Report's "Warranty not
+    # filled" reads this same function with no other exception.
+    if (not jobcard.is_warranty and list(jobcard.labours.all())
+            and (jobcard.labour_amount or ZERO) <= ZERO):
         header.append(JOB_AMOUNT)
 
     # ---- The work --------------------------------------------------------
@@ -231,6 +243,8 @@ def unfilled(jobcard):
     inventory = []
     spares = []
     for spare in jobcard.spares.all():
+        if spare.pk in skip:
+            continue
         # A part is named here by `spare_part_name` — for a warehouse draw that
         # is the BRANDED SKU ("Castrol Edge 5W-30"), deliberately, and NOT
         # `invoice.part_display_name`'s category. Both surfaces reading this are

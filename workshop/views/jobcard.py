@@ -807,10 +807,16 @@ def jobcard_detail(request, pk):
 
     # A WARRANTY CARD charges nothing, so no part prints a customer price —
     # every one is ₹0 by the server's rule, and a column of "₹0" reads as parts
-    # nobody priced. A shop part keeps its COST line: a warranty's cost is real.
+    # nobody priced. Its ONE part says the SHOP'S ANSWER where a price would
+    # sit (2026-10-09) — Waiting, Free part, or what the shop charged; a stock
+    # part what the shelf cost — and transport alone on the line under it.
+    # The Warranty list's own two facts, so the two screens read one way.
+    wr_cost = None
     if jobcard.is_warranty:
         for spare in all_spares:
             spare.price_str = None
+            _describe_claimed(spare)
+        wr_cost = warranty.cost_by_card([jobcard.pk]).get(jobcard.pk)
 
     # The three section subtotals, summed here off the SAME lists the page
     # prints — never re-queried. `update_totals()` is
@@ -846,6 +852,10 @@ def jobcard_detail(request, pk):
         # card is FOR, and the warranty cards opened against this bill.
         'warranty_bill': warranty.find(jobcard.warranty_for) if jobcard.is_warranty else None,
         'warranty_claims': warranty.claims_for([jobcard.bill_number]).get(jobcard.bill_number, []),
+        # A warranty card's parts, both routes, as ONE "Claimed Part" section,
+        # and what the claim cost us — the Warranty list's figure.
+        'claimed_parts': all_spares if jobcard.is_warranty else None,
+        'wr_cost': wr_cost,
     })
 
 
@@ -1017,6 +1027,35 @@ def _describe_spare(spare, is_draw, card_year=None):
     if not is_draw and spare.transport_cost:
         spare.cost_str = f"{spare.cost_str or '—'} + {rupees(spare.transport_cost)} transport"
     spare.price_str = rupees(spare.total_price)
+
+
+def _describe_claimed(spare):
+    """
+    A warranty card's part, on the read-only card: the SHOP'S ANSWER in place
+    of a price (`wr_answer` — 'wait', 'free' or 'paid', with `wr_amount`), and
+    transport ALONE on the line under it. It read "— + ₹50 transport" until
+    2026-10-09, a dash standing for a blank Shop Price that nobody could read.
+
+    The answer is the Shop Price box, the rule `warranty.waiting_on_shop` and
+    `free_from_shop` keep: blank is waiting, ₹0 free, an amount what the shop
+    charged. A stock part has no shop answer — it says what the shelf cost.
+    """
+    def rupees(value):
+        return f'₹{intcomma(floatformat(value, 0))}'
+
+    if spare.source == JobCardSpareItem.SOURCE_INVENTORY:
+        spare.wr_answer = 'paid' if spare.unit_price is not None else None
+        spare.wr_amount = (rupees(spare.unit_price * (spare.quantity or 1))
+                           if spare.unit_price is not None else None)
+    elif spare.unit_price is None:
+        spare.wr_answer, spare.wr_amount = 'wait', None
+    elif spare.unit_price == 0:
+        spare.wr_answer, spare.wr_amount = 'free', None
+    else:
+        spare.wr_answer, spare.wr_amount = 'paid', rupees(spare.unit_price)
+    spare.cost_str = (f'+ {rupees(spare.transport_cost)} transport'
+                      if spare.source == JobCardSpareItem.SOURCE_SHOP and spare.transport_cost
+                      else None)
 
 
 @staff_required

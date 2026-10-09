@@ -499,8 +499,11 @@ The quantity may go down (one of four injectors failed), never above the bill's.
 
 **The Shop Price is the shop's answer**: blank while it has not answered, **0**
 when it replaced the part free, an amount when the workshop paid. The Warranty
-page's **Waiting on the shop** lists every claimed part still blank, oldest
+page's **Waiting for shop price** lists every claimed part still blank, oldest
 first, and is never filtered — a shop often answers after the car has gone.
+The box itself reads **"0 if free"** while it is blank. Below it, the warranty
+cards list in the app's own date-filter dropdown: This Year (default), Last Year
+or All Time.
 
 **Money.** The customer pays nothing: the card's bill is always ₹0, it is never
 settled, it cannot go to a Fleet Account, and it is in no bill list (Pending
@@ -1360,6 +1363,16 @@ LIVE REPORT — Office / Owner only, WHOLE PAGE
                     filter somebody would have to widen to find the oldest and
                     worst cards.
 
+    WARRANTY        Teal, the warranty colour, SECOND, and only when there is
+    NOT FILLED      one: COMPLETED warranty cards with an empty box — mileage,
+                    mechanic, a concern not marked fixed, the part's shop, its
+                    dates, its Shop Price. The same checker and the same gap
+                    rows as "Billed but not filled", except a warranty card is
+                    never asked for a labour charge. Tracking starts when the
+                    card is completed. A part still on its way stays in "On the
+                    way" (car gone or not) and is not counted here. Each row
+                    opens the warranty card.
+
     ── Spares ──    Three boxes, green → amber → red: the lifecycle backwards,
                     most-finished first.
 
@@ -1389,7 +1402,8 @@ LIVE REPORT — Office / Owner only, WHOLE PAGE
                     their own. They list SHOP purchases only — a warehouse draw
                     came off the shelf already fitted and has no ordering
                     workflow to wait on — and only for cars still in the
-                    workshop.
+                    workshop, except a WARRANTY card's part, which stays until
+                    it arrives even after the car has gone home.
 
     ── Still to do ──  The heading names the WORK; the box under it names its
                     ROWS, which are CARS.
@@ -1651,6 +1665,9 @@ OWNER ANALYSIS — PROFIT (Owner only)
   Expenses: Spare Shops · Inventory Used · Salary & Advance · Cashbook Expense · Rent
     — all five are the cost of work DONE in the period. A part is charged when it is
     fitted to a car, whichever shelf it came off.
+  Under Total Expenses, when there is some: "Includes warranty claims ₹X" — what free
+    work under warranty cost (its parts and their transport). It is already inside the
+    total, so it is grey and is never added to it.
   Rent: what the premises COST, read from the rate in Deposit & Rent, charged in whole
     months and capped at the month in progress. Never the daily deposits — those are
     cash and are reported under Cash Tracking, the same split a supplier payment and a
@@ -1682,7 +1699,11 @@ OWNER ANALYSIS — PROFIT (Owner only)
 
 OWNER ANALYSIS — DEEP ANALYSIS (Owner only, reached from the Profit page)
   Sections (each loaded on demand): Mechanics · Spare Parts · Inventory · Vehicles · Fleet
-    · Shops · Cashbook · Operations
+    · Shops · Warranty · Cashbook · Operations
+  Warranty: claims and what they cost for the chosen period, then — counted from the
+    start — which parts come back ("2 of 11 fitted · 18%", with the cars they failed on)
+    and which shops' parts come back, and how often each shop replaced free. A claim
+    against an Excel bill is counted beside the rate, never in it.
   Note: a car is identified by its REGISTRATION NUMBER throughout. Customer name and
   contact are optional on a job card and usually blank, and no figure in Analysis
   depends on them either way.

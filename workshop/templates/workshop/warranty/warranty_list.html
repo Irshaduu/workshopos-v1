@@ -10,13 +10,14 @@ THE WARRANTY PAGE — every warranty card, and what is still waiting
 ==========================================================================
 Office and Owner, from the drawer. Two parts, top to bottom:
 
-* WAITING ON THE SHOP — every warranty part with no Shop Price yet (blank is
+* WAITING FOR SHOP PRICE — every warranty part with no Shop Price yet (blank is
   waiting, ₹0 is free, an amount is what the shop charged). Oldest first and
   NEVER filtered by the search or the period below: an unanswered claim must
   not drop out of sight because somebody narrowed the list. Each row opens the
   card's FORM, because that is where the shop's answer is typed. Absent when
   nothing is waiting.
-* EVERY WARRANTY CARD, newest first, with a search and This Year / All Time.
+* EVERY WARRANTY CARD, newest first, with a search and This Year / Last Year /
+  All Time in the app's own date-filter dropdown.
   The heading's count and cost are over exactly the cards listed.
 
 Plain links and a plain GET form; nothing here needs a script.
@@ -35,13 +36,15 @@ Plain links and a plain GET form; nothing here needs a script.
 
     {% if waiting %}
     <section class="wl-sec" aria-labelledby="wlWait">
-        <h2 class="wl-h2" id="wlWait"><i class="bi bi-hourglass-split" aria-hidden="true"></i> Waiting on the shop <span class="wl-n">{{ waiting|length }}</span></h2>
+        <h2 class="wl-h2" id="wlWait"><i class="bi bi-hourglass-split" aria-hidden="true"></i> Waiting for shop price <span class="wl-n">{{ waiting|length }}</span></h2>
         <div class="wl-list">
             {% for spare in waiting %}
+            {% comment %} The card row's three lines: the part and the shop to chase, which car, which card. {% endcomment %}
             <a class="wl-row" href="{% url 'warranty_card' spare.job_card_id %}">
                 <span class="wl-main">
                     <span class="wl-l1"><b>{{ spare.spare_part_name|default:"Unnamed part" }}</b><span class="wl-shop">{% if spare.shop %}{{ spare.shop.name }}{% else %}No shop{% endif %}</span></span>
-                    <span class="wl-l2">{{ spare.job_card.bill_number }} · {% if spare.job_card.brand_name or spare.job_card.model_name %}{{ spare.job_card.brand_name }} {{ spare.job_card.model_name }} · {% endif %}{{ spare.job_card.registration_number }}</span>
+                    <span class="wl-dots wl-car">{% if spare.job_card.brand_name or spare.job_card.model_name %}<span>{{ spare.job_card.brand_name }} {{ spare.job_card.model_name }}</span>{% endif %}<span>{{ spare.job_card.registration_number }}</span></span>
+                    <span class="wl-dots wl-meta"><span class="wl-no">{{ spare.job_card.bill_number }}</span><span>for {{ spare.job_card.warranty_for }}</span></span>
                 </span>
                 <span class="wl-side"><span class="wl-age">{{ spare.age }}</span></span>
             </a>
@@ -55,9 +58,11 @@ Plain links and a plain GET form; nothing here needs a script.
 
         {% comment %}
         The app's own search box, live as you type (the script at the foot), and
-        the period as two pills that refresh the list the same way. Both stay
-        plain links and a plain GET form underneath, so without the script Enter
-        still searches and a pill still opens its period.
+        the period in the app's own date-filter dropdown — Completed's funnel
+        button and menu, values copied (2026-10-09), with only This Year, Last
+        Year and All Time. Both stay a plain GET form and plain links
+        underneath, so without the script Enter still searches and a menu item
+        still opens its period.
         {% endcomment %}
         <div class="wl-controls">
             <form id="wlSearchForm" class="wl-search" method="get" role="search">
@@ -66,8 +71,20 @@ Plain links and a plain GET form; nothing here needs a script.
                        placeholder="WR, JB, plate, car" aria-label="Search warranty cards" autocomplete="off">
                 <input type="hidden" id="wlFilter" name="filter" value="{{ filter_type }}">
             </form>
-            <div class="wl-pills" role="group" aria-label="Period">
-                {% for key, label in filters %}<a class="wl-pill{% if key == filter_type %} is-on{% endif %}" data-filter="{{ key }}" href="?filter={{ key }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}"{% if key == filter_type %} aria-current="true"{% endif %}>{{ label }}</a>{% endfor %}
+            <div class="dropdown">
+                <button id="wlFilterBtn" class="wl-filter-btn" type="button" data-bs-toggle="dropdown"
+                        aria-expanded="false">
+                    <i class="bi bi-funnel" aria-hidden="true"></i>
+                    <span id="wlFilterLabel">{{ filter_label }}</span>
+                    <i class="bi bi-chevron-down" aria-hidden="true"></i>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end wl-filter-menu">
+                    {% for key, label in filters %}
+                    <li><a class="dropdown-item{% if key == filter_type %} active{% endif %}" data-filter="{{ key }}" href="?filter={{ key }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}"{% if key == filter_type %} aria-current="true"{% endif %}>
+                        <i class="bi {% if key == 'all' %}bi-infinity{% elif key == 'last_year' %}bi-calendar2{% else %}bi-calendar3{% endif %} item-icon" aria-hidden="true"></i>{{ label }}
+                    </a></li>
+                    {% endfor %}
+                </ul>
             </div>
         </div>
 
@@ -163,7 +180,7 @@ Plain links and a plain GET form; nothing here needs a script.
        figure or the wait on the right. 44px at the least — tapped on a phone. */
     .wl-row {
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         gap: .75rem;
         min-height: 44px;
         padding: .65rem .85rem;
@@ -190,7 +207,17 @@ Plain links and a plain GET form; nothing here needs a script.
     }
 
     .wl-l1 b { font-weight: 700; font-variant-numeric: tabular-nums; }
-    .wl-date, .wl-shop { font-size: .8rem; color: var(--color-text-muted); }
+    .wl-shop { font-size: .8rem; color: var(--color-text-muted); }
+
+    /* Lines 2 and 3 — which car, then the card's numbers. Each fact is its own
+       unbreakable piece and the dot TRAILS it, so a phone wraps BETWEEN facts
+       and never opens a line on a separator. */
+    .wl-dots { display: flex; flex-wrap: wrap; font-size: .78rem; line-height: 1.35; }
+    .wl-dots > span { white-space: nowrap; }
+    .wl-dots > span:not(:last-child)::after { content: '·'; margin: 0 .35em; }
+    .wl-car { color: #475569; }
+    .wl-meta { color: var(--color-text-muted); }
+    .wl-no { font-weight: 600; font-variant-numeric: tabular-nums; }
 
     .wl-floor {
         padding: .05rem .4rem;
@@ -203,8 +230,6 @@ Plain links and a plain GET form; nothing here needs a script.
         letter-spacing: .04em;
         text-transform: uppercase;
     }
-
-    .wl-l2 { font-size: .78rem; color: var(--color-text-muted); overflow-wrap: anywhere; }
 
     .wl-side {
         flex: none;
@@ -279,30 +304,84 @@ Plain links and a plain GET form; nothing here needs a script.
 
     .wl-search-input::placeholder { color: var(--color-text-muted); }
 
-    .wl-pills {
-        flex: none;
-        display: flex;
-        padding: 3px;
-        border: 1px solid var(--color-border);
-        border-radius: 999px;
-        background: var(--color-card);
-    }
-
-    .wl-pill {
+    /* THE APP'S DATE FILTER — Completed's funnel button and menu, values
+       copied, never approximated: the two pages are opened in one sitting and
+       a filter that changed shape between them would read as two products. */
+    .wl-filter-btn {
         display: inline-flex;
         align-items: center;
-        min-height: 34px;
-        padding: 0 .75rem;
+        gap: 5px;
+        height: 40px;
+        box-sizing: border-box;
+        background: var(--color-card);
+        border: 1px solid var(--color-border);
         border-radius: 999px;
-        color: var(--color-text-muted);
-        font-size: .8rem;
-        font-weight: 700;
-        text-decoration: none;
+        padding: 0 12px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: var(--color-text);
+        cursor: pointer;
+        box-shadow: 0 1px 3px var(--color-shadow);
         white-space: nowrap;
+        flex-shrink: 0;
+        transition: border-color 0.15s;
     }
 
-    .wl-pill.is-on { background: var(--wr-ink); color: #fff; }
-    @media (hover: none) { .wl-pill { min-height: 38px; } }
+    .wl-filter-btn:hover { border-color: var(--color-primary); }
+    .wl-filter-btn .bi-funnel { font-size: 0.72rem; color: var(--color-text-muted); }
+    .wl-filter-btn .bi-chevron-down { font-size: 0.6rem; opacity: 0.5; }
+
+    @media (max-width: 640px), (pointer: coarse) {
+        .wl-filter-btn { padding: 0 14px; font-size: 0.85rem; }
+        .wl-filter-btn .bi-funnel { font-size: 0.8rem; }
+    }
+
+    .wl-filter-menu {
+        border-radius: 16px;
+        border: 1px solid var(--color-border);
+        box-shadow: 0 20px 60px rgba(0,0,0,0.14), 0 6px 16px rgba(0,0,0,0.07);
+        padding: 4px;
+        min-width: 155px;
+        width: max-content;
+        margin-top: 6px !important;
+    }
+
+    .wl-filter-menu .dropdown-item {
+        border-radius: 8px;
+        font-size: 0.92rem;
+        font-weight: 500;
+        padding: 11px 14px;
+        color: var(--color-text);
+        transition: background 0.12s, color 0.12s;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .wl-filter-menu .dropdown-item .item-icon {
+        font-size: 0.85rem;
+        opacity: 0.38;
+        flex-shrink: 0;
+        width: 16px;
+        text-align: center;
+        transition: opacity 0.12s;
+    }
+
+    .wl-filter-menu .dropdown-item:hover { background: rgba(37,99,235,0.07); color: var(--color-primary); }
+    .wl-filter-menu .dropdown-item:hover .item-icon { opacity: 0.7; }
+    .wl-filter-menu .dropdown-item.active {
+        background: rgba(37,99,235,0.1);
+        color: var(--color-primary);
+        font-weight: 700;
+    }
+    .wl-filter-menu .dropdown-item.active .item-icon { opacity: 1; }
+    .wl-filter-menu .dropdown-item.active::after {
+        content: '✓';
+        margin-left: auto;
+        font-size: 0.75rem;
+        font-weight: 900;
+        color: var(--color-primary);
+    }
 
     .wl-empty {
         margin: .25rem 0;
@@ -368,14 +447,16 @@ document.addEventListener('DOMContentLoaded', function () {
         update(new URL(link.href).searchParams.get('page'));
         document.getElementById('wlAll').scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
-    document.querySelectorAll('.wl-pill[data-filter]').forEach(function (pill) {
-        pill.addEventListener('click', function (e) {
+    const filterLabel = document.getElementById('wlFilterLabel');
+    document.querySelectorAll('.wl-filter-menu a[data-filter]').forEach(function (item) {
+        item.addEventListener('click', function (e) {
             e.preventDefault();
-            currentFilter = pill.dataset.filter;
+            currentFilter = item.dataset.filter;
             if (filterBox) filterBox.value = currentFilter;
-            document.querySelectorAll('.wl-pill[data-filter]').forEach(function (other) {
-                const on = other === pill;
-                other.classList.toggle('is-on', on);
+            if (filterLabel) filterLabel.textContent = item.textContent.trim();
+            document.querySelectorAll('.wl-filter-menu a[data-filter]').forEach(function (other) {
+                const on = other === item;
+                other.classList.toggle('active', on);
                 if (on) other.setAttribute('aria-current', 'true');
                 else other.removeAttribute('aria-current');
             });

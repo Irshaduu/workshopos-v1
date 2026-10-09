@@ -1,0 +1,90 @@
+{% load custom_filters %}
+
+{% comment %}
+  WARRANTY — which parts come back, whose parts they were, and what claims
+  cost (2026-10-09, the owners' ask). Three answers, nothing more.
+
+  THE TILES FOLLOW THE DATE FILTER, by claim date. Cost to us is the Profit
+  page's own "Includes warranty claims" figure (`engine.warranty_cost`).
+
+  THE TABLES COUNT FROM THE START, whatever the filter — at ~30 cars a month a
+  single month is too few parts to judge — and the note at the foot says so.
+
+  ⚠ A RATE IS ALWAYS PRINTED WITH ITS COUNTS ("2 of 11 fitted · 18%"), never
+  alone: 1 of 1 is 100% and is not a pattern. A claim against an Excel bill is
+  counted beside the rate, never inside it — nobody knows how many were fitted
+  in the Excel years. ⚠ A shop is judged on the parts IT sold that failed,
+  never on who supplied the replacement. ⚠ No red anywhere: a part coming back
+  is a fact to read, and red in this app means something is wrong to fix.
+{% endcomment %}
+
+<div class="ia-stats">
+  <div class="ia-stat"><div class="k">Claims</div><div class="v">{{ tiles.claims }}</div></div>
+  <div class="ia-stat"><div class="k">Cost to us</div>
+    <div class="v">₹{{ tiles.cost|inr_compact }}</div>
+    <div class="b">parts and transport, by claim date</div></div>
+  {% if tiles.answered %}
+  <div class="ia-stat"><div class="k">Replaced free</div>
+    <div class="v">{{ tiles.free }} of {{ tiles.answered }}</div>
+    <div class="b">of the shops' answers</div></div>
+  {% endif %}
+  {% if tiles.waiting %}
+  <div class="ia-stat"><div class="k">Waiting for shop price</div>
+    <div class="v">{{ tiles.waiting }}</div></div>
+  {% endif %}
+</div>
+
+{% if any_claims %}
+
+<div class="ia-sub">Parts That Come Back</div>
+<div class="ia-scroll">
+  <table class="ia-tbl">
+    <thead><tr><th>Part</th><th class="num">Came back</th></tr></thead>
+    <tbody>
+      {% for p in part_rows %}
+      <tr>
+        <td class="strong">{{ p.name }}
+          <span class="sub">{% for c in p.cars %}{{ c.label }}{% if c.n > 1 %} ×{{ c.n }}{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}{% if p.more_cars %} · +{{ p.more_cars }} more{% endif %}</span>
+        </td>
+        <td class="num">
+          {% if p.back.claims %}<span class="strong">{{ p.back.claims }} of {{ p.back.fitted }}</span> fitted · {{ p.back.pct_label }}{% endif %}
+          {% if p.excel %}<span class="sub">{% if p.back.claims %}+{% endif %}{{ p.excel }} on {{ p.excel|pluralize:"an Excel bill,Excel bills" }}</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if parts_more %}
+<p class="text-muted" style="font-size:0.75rem; margin:6px 0 0;">
+  The {{ part_rows|length }} that come back most; {{ parts_more }} more not shown.</p>
+{% endif %}
+
+{% if shop_rows %}
+<div class="ia-sub">Shops Whose Parts Come Back</div>
+<div class="ia-scroll">
+  <table class="ia-tbl">
+    <thead><tr><th>Shop</th><th class="num">Came back</th><th class="num">Replaced free</th></tr></thead>
+    <tbody>
+      {% for s in shop_rows %}
+      <tr>
+        <td class="strong">{{ s.name }}</td>
+        <td class="num"><span class="strong">{{ s.back.claims }} of {{ s.back.fitted }}</span> parts · {{ s.back.pct_label }}</td>
+        <td class="num">{% if s.answered %}{{ s.free }} of {{ s.answered }}{% else %}<span style="color:var(--color-text-muted);">waiting</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="ia-note">
+  <i class="bi bi-info-circle-fill text-primary mt-1"></i>
+  <span>The tables count every part <strong>since the start</strong>, whatever period is chosen
+    above — a month is too few parts to judge. Read the counts, not just the %: 1 of 2 is not a
+    pattern yet. A shop is counted for the parts it sold that failed.</span>
+</div>
+
+{% else %}
+<p class="text-muted mb-0" style="font-size:0.84rem;">No warranty claims yet.</p>
+{% endif %}

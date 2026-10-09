@@ -8,23 +8,34 @@ into and the list loaded are one markup.
 <span id="wlTotals" hidden data-count="{{ count }}" data-sum="{% if cost %}₹{{ cost|inr }} warranty cost{% else %}No warranty cost{% endif %} · {{ filter_label }}"></span>
     <div class="wl-list">
         {% for card in cards %}
+        {% comment %}
+        THREE PLACED LINES, one meaning each (2026-10-09, the owners' call —
+        it was one run-on line that wrapped anywhere on a phone): the PART the
+        claim is about, then WHICH CAR, then the card's own numbers. The part
+        leads because that is what the page is scanned for; a WR number is a
+        lookup key, and the search finds it.
+        {% endcomment %}
         <a class="wl-row" href="{% url 'jobcard_detail' card.pk %}?back={{ request.get_full_path|urlencode }}">
             <span class="wl-main">
-                <span class="wl-l1"><b>{{ card.bill_number }}</b><span class="wl-date">{{ card.admitted_date|date:"j M Y" }}</span>{% if not card.completed %}<span class="wl-floor">On the floor</span>{% endif %}</span>
-                <span class="wl-l2"><b class="wl-part">{{ card.claimed_name }}</b> · for {{ card.warranty_for }} · {% if card.brand_name or card.model_name %}{{ card.brand_name }} {{ card.model_name }} · {% endif %}{{ card.registration_number }}</span>
+                <span class="wl-l1"><b class="wl-part">{{ card.claimed_name }}</b>{% if not card.completed %}<span class="wl-floor">On the floor</span>{% endif %}</span>
+                <span class="wl-dots wl-car">{% if card.brand_name or card.model_name %}<span>{{ card.brand_name }} {{ card.model_name }}</span>{% endif %}<span>{{ card.registration_number }}</span></span>
+                <span class="wl-dots wl-meta"><span class="wl-no">{{ card.bill_number }}</span><span>{{ card.admitted_date|date:"j M Y" }}</span><span>for {{ card.warranty_for }}</span></span>
             </span>
             {% comment %}
-            What it cost, and the shop's answer in one word when there is
-            something to say: WAITING while any part has no Shop Price, FREE
-            when every part came at ₹0. A card with no parts says nothing.
+            TWO FACTS, ONE EACH (2026-10-09): the amount is what the claim cost
+            US — parts and transport; the chip is the SHOP'S ANSWER — WAITING
+            while its Shop Price is blank, FREE PART when it is ₹0, even with
+            transport paid ("₹55 · Free part"). Deep Analysis reads "free" the
+            same way (`warranty.free_from_shop`). A stock part gets no chip:
+            our own shelf is never a shop replacing free.
             {% endcomment %}
             <span class="wl-side">
                 {% if card.cost %}<span class="wl-cost">₹{{ card.cost|inr }}</span>{% endif %}
-                {% if card.waiting %}<span class="wl-chip wl-chip-wait">Waiting</span>{% elif card.cost == 0 %}<span class="wl-chip wl-chip-free">Free</span>{% endif %}
+                {% if card.waiting %}<span class="wl-chip wl-chip-wait">Waiting</span>{% elif card.free %}<span class="wl-chip wl-chip-free">Free part</span>{% endif %}
             </span>
         </a>
         {% empty %}
-        <p class="wl-empty">{% if q %}No warranty card matches “{{ q }}”.{% elif filter_type == 'this_year' %}No warranty cards this year.{% else %}No warranty cards yet.{% endif %}</p>
+        <p class="wl-empty">{% if q %}No warranty card matches “{{ q }}”.{% elif filter_type == 'this_year' %}No warranty cards this year.{% elif filter_type == 'last_year' %}No warranty cards last year.{% else %}No warranty cards yet.{% endif %}</p>
         {% endfor %}
     </div>
 

@@ -51,7 +51,7 @@ and two about a card already open: how far the car has run since the bill its
 warranty clock runs from (`km_since`, given `first_bill`), and whether a claim opened by mistake may still be
 cancelled (`cancel_refusal`, `cancel_warranty`).
 
-and the Warranty page's figures: which parts are still waiting on the shop,
+and the Warranty page's figures: which parts are still waiting for a shop price,
 and what warranty work cost.
 
 A warranty card is a `JobCard` with `kind=WARRANTY` and its own WR-YY-NNN
@@ -700,6 +700,28 @@ def waiting_on_shop():
         .select_related('job_card', 'shop')
         .order_by('job_card__admitted_date', 'job_card__pk', 'pk')
     )
+
+
+def free_from_shop(card_ids):
+    """
+    Which of these warranty cards the shop REPLACED FREE — `{pk}`: a spare-shop
+    part whose Shop Price is ₹0, the shop's own answer (2026-10-09).
+
+    ⚠ THE SHOP'S ANSWER, NEVER WHAT THE CARD COST US. The list used to say Free
+    only when the card's whole cost was ₹0, so a part the shop gave free with
+    ₹55 of transport paid read as charged, while Deep Analysis counted it as
+    replaced free. The cost stays beside it as its own figure. A warehouse draw
+    is never free from a shop — it came off our own shelf — even when its cost
+    is still unknown. One query.
+    """
+    answers = {}
+    for card_id, price in (JobCardSpareItem.objects
+                           .filter(job_card_id__in=list(card_ids),
+                                   source=JobCardSpareItem.SOURCE_SHOP)
+                           .values_list('job_card_id', 'unit_price')):
+        # Every shop part on the card answered ₹0; a blank (None) is waiting.
+        answers[card_id] = answers.get(card_id, True) and price == 0
+    return {card_id for card_id, free in answers.items() if free}
 
 
 def cost_by_card(card_ids):

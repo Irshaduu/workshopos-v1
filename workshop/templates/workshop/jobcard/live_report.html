@@ -113,6 +113,9 @@
     .lr-box--amber { background: var(--lr-amber-bg); border-color: var(--lr-amber-line); }
     .lr-box--red   { background: var(--lr-red-bg);   border-color: var(--lr-red-line); }
     .lr-box--green { background: var(--lr-green-bg); border-color: var(--lr-green-line); }
+    /* TEAL is the app's one warranty colour (`--wr-*`, style.css) — never
+       mistaken for the green / amber / red of a part's journey. */
+    .lr-box--teal  { background: var(--wr-tint); border-color: var(--wr-line); }
 
 
     .lr-box-head {
@@ -135,6 +138,7 @@
     .lr-box--amber .lr-box-title { color: var(--lr-amber); }
     .lr-box--red   .lr-box-title { color: var(--lr-red); }
     .lr-box--green .lr-box-title { color: var(--lr-green); }
+    .lr-box--teal  .lr-box-title { color: var(--wr-ink); }
     .lr-box-title .bi { font-size: 0.95rem; }
 
     .lr-box-count {
@@ -152,6 +156,7 @@
     .lr-box--amber .lr-box-count { background: rgba(217, 119, 6, 0.16); color: var(--lr-amber); }
     .lr-box--red   .lr-box-count { background: rgba(220, 38, 38, 0.14); color: var(--lr-red); }
     .lr-box--green .lr-box-count { background: rgba(22, 163, 74, 0.16); color: var(--lr-green); }
+    .lr-box--teal  .lr-box-count { background: rgba(15, 118, 110, 0.14); color: var(--wr-ink); }
 
     .lr-empty {
         font-size: 0.82rem;
@@ -221,6 +226,16 @@
         }
     }
     .lr-bill:active { border-color: rgba(220, 38, 38, 0.45); background: #fffafa; }
+    /* "Warranty not filled" draws the same cards in its own teal frame; the
+       gaps inside stay red, because missing is missing. */
+    .lr-box--teal .lr-bill { border-color: rgba(15, 118, 110, 0.24); }
+    @media (hover: hover) {
+        .lr-box--teal .lr-bill:hover {
+            border-color: rgba(15, 118, 110, 0.5);
+            box-shadow: 0 2px 10px rgba(15, 118, 110, 0.10);
+        }
+    }
+    .lr-box--teal .lr-bill:active { border-color: rgba(15, 118, 110, 0.5); background: #f7fffd; }
 
     {% comment %}
     The NAME and the billed state share the top line; the plate sits under them
@@ -691,7 +706,7 @@
     that colour is the first thing the eye lands on. A new box variant here
     means five rules, not one.
     {% endcomment %}
-    .lr-box--amber, .lr-box--red, .lr-box--green { border-radius: 0; }
+    .lr-box--amber, .lr-box--red, .lr-box--green, .lr-box--teal { border-radius: 0; }
     .lr-spare {
         display: block;
         text-decoration: none;
@@ -808,7 +823,7 @@ task; here it is a hole in the books.
     </div>
 
     {% for job in unfilled_cards %}
-    {% with color=job.get_car_color_hex|default:'#94a3b8' u=job.unfilled %}
+    {% with color=job.get_car_color_hex|default:'#94a3b8' %}
     <a href="{% url 'jobcard_edit' job.pk %}?next=mini" class="lr-bill">
 
         <span class="lr-bill-head">
@@ -848,55 +863,7 @@ task; here it is a hole in the books.
         <span class="lr-bill-sub"><span class="lr-bill-reg">{{ job.registration_number }}</span></span>
         {% endif %}
 
-        {% comment %}
-        One box per gap, each holding the thing and what is wrong with it. The
-        icon in front of a row is the glyph the job card heads that section
-        with, so the row says which part of the card to open.
-
-        The card's own boxes — mileage, mechanic, the labour charge — belong to
-        the whole card rather than to any one row, so that box carries the
-        phrase alone and no icon: the card IS the car it is about.
-        {% endcomment %}
-        <span class="lr-gaps">
-            {% if u.card %}
-            <span class="lr-gap lr-gap--card">
-                <span class="lr-gap-miss">{{ u.card_missing }}</span>
-            </span>
-            {% endif %}
-
-            {% for concern in job.uf_concerns %}
-            <span class="lr-gap">
-                <i class="bi bi-chat-left-text-fill lr-gap-ico" aria-hidden="true"></i>
-                <span class="lr-gap-name">{{ concern.text|default:"Concern" }}</span>
-                <span class="lr-gap-miss">{{ concern.missing }}</span>
-            </span>
-            {% endfor %}
-            {% if job.uf_concerns_more %}
-            <span class="lr-bill-more">+{{ job.uf_concerns_more }} more concerns</span>
-            {% endif %}
-
-            {% for part in job.uf_inventory %}
-            <span class="lr-gap">
-                <i class="bi bi-box-seam-fill lr-gap-ico" aria-hidden="true"></i>
-                <span class="lr-gap-name">{{ part.name }}</span>
-                <span class="lr-gap-miss">{{ part.missing }}</span>
-            </span>
-            {% endfor %}
-            {% if job.uf_inventory_more %}
-            <span class="lr-bill-more">+{{ job.uf_inventory_more }} more items</span>
-            {% endif %}
-
-            {% for part in job.uf_spares %}
-            <span class="lr-gap">
-                <i class="bi bi-gear-wide-connected lr-gap-ico" aria-hidden="true"></i>
-                <span class="lr-gap-name">{{ part.name }}</span>
-                <span class="lr-gap-miss">{{ part.missing }}</span>
-            </span>
-            {% endfor %}
-            {% if job.uf_spares_more %}
-            <span class="lr-bill-more">+{{ job.uf_spares_more }} more parts</span>
-            {% endif %}
-        </span>
+        {% include 'workshop/includes/_unfilled_gaps.html' %}
 
     </a>
     {% endwith %}
@@ -906,6 +873,52 @@ task; here it is a hole in the books.
 </section>
 
 {% include 'workshop/includes/pagination.html' %}
+
+{% comment %}
+── Warranty not filled (2026-10-09, the owners' call) ──
+
+SECOND ON THE PAGE, under "Billed but not filled", and its twin: COMPLETED
+warranty cards with an empty box — the mileage, the mechanic, a concern not
+marked fixed, the part's shop, its dates, its Shop Price. A warranty card's
+"done" moment is Complete, the way a bill's is settling, so that is where
+tracking starts. A warranty part still TRAVELLING stays in "On the way" (or
+"Not ordered yet") below even after the car has left — the car often goes home
+while the replacement is on order — and is left out of the gaps here. `settlement.unfilled` is the checker for both
+boxes (it asks a warranty card for no labour charge), and the gap rows are one
+include, so "not filled" means one thing on this page.
+
+It replaced a "Waiting for shop price" box: a blank Shop Price on a finished
+card is one of these gaps now. The Warranty page keeps its own "Waiting for
+shop price" list, across every card. Teal frame, the warranty colour; the gaps
+inside read red like the box above, because missing is missing. ABSENT when
+every finished warranty card is filled in — claims are rare, and a permanent
+empty box is furniture. A row opens the warranty card and comes back here.
+{% endcomment %}
+{% if warranty_unfilled %}
+<section class="lr-box lr-box--teal">
+    <div class="lr-box-head">
+        <span class="lr-box-title"><i class="bi bi-shield-check"></i> Warranty not filled</span>
+        <span class="lr-box-count">{{ warranty_unfilled_count }}</span>
+    </div>
+
+    {% for job in warranty_unfilled %}
+    {% with color=job.get_car_color_hex|default:'#94a3b8' %}
+    <a href="{% url 'warranty_card' job.pk %}?next=mini" class="lr-bill">
+        <span class="lr-bill-head">
+            <span class="lr-bill-car">
+                <span class="lr-bill-dot" style="--stripe: {{ color }};"></span>
+                {% if job.brand_name or job.model_name %}
+                {{ job.brand_name }} {{ job.model_name }}
+                {% else %}{{ job.registration_number }}{% endif %}
+            </span>
+        </span>
+        <span class="lr-bill-sub"><span class="lr-bill-reg">{% if job.brand_name or job.model_name %}{{ job.registration_number }} · {% endif %}{{ job.bill_number }}</span></span>
+        {% include 'workshop/includes/_unfilled_gaps.html' %}
+    </a>
+    {% endwith %}
+    {% endfor %}
+</section>
+{% endif %}
 
 <h6 class="lr-group">Spares</h6>
 

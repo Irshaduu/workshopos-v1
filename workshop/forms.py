@@ -1194,8 +1194,8 @@ class WarrantyPartForm(ShopSpareRowForm):
     and the same rules, with no customer price (the customer pays nothing).
 
     THE SHOP PRICE IS THE SHOP'S ANSWER, in the box that already holds it:
-    BLANK while the shop has not answered (the Warranty page's "Waiting on the
-    shop"), ₹0 when it replaced the part free, an AMOUNT when the workshop paid
+    BLANK while the shop has not answered (the Warranty page's "Waiting for
+    shop price"), ₹0 when it replaced the part free, an AMOUNT when the workshop paid
     — the shop charged, or the replacement was bought from another shop.
     Nothing new is stored, so the shop's ledger and the Profit page read the
     column they always did.
@@ -1226,8 +1226,11 @@ class WarrantyPartForm(ShopSpareRowForm):
         replaced = self.instance.replaces if self.instance.pk and self.instance.replaces_id else None
         self.first_shop = replaced.shop if replaced is not None and replaced.shop_id else None
         self.fields['quantity'].widget.attrs['inputmode'] = 'decimal'
+        # The placeholder says what to TYPE, not the state ("Waiting" until
+        # 2026-10-09): the heading already reads Shop Price, so all the box
+        # has to add is what a 0 means. The empty-box hairline says it is blank.
         self.fields['unit_price'].widget.attrs.update({
-            'placeholder': 'Waiting', 'inputmode': 'decimal',
+            'placeholder': '0 if free', 'inputmode': 'decimal',
             'aria-label': "Shop Price (₹) — blank while the shop has not answered, 0 if it was free",
         })
         self.fields['transport_cost'].widget.attrs['inputmode'] = 'decimal'
